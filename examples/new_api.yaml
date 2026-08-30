@@ -1,0 +1,127 @@
+openapi: 3.0.3
+info:
+  title: Bookstore API
+  version: 2.0.0
+servers:
+  - url: https://api.bookstore.example.com/v2
+security:
+  - ApiKeyAuth: []
+paths:
+  /books:
+    get:
+      summary: Kitap listesini getirir
+      parameters:
+        - name: category
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Basarili
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Book"
+    post:
+      summary: Yeni kitap ekler
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookInput"
+      responses:
+        "201":
+          description: Olusturuldu
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+  /books/{bookId}:
+    get:
+      summary: Tek bir kitabi getirir
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Basarili
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+  /books/{bookId}/reviews:
+    get:
+      summary: Bir kitaba ait yorumlari getirir
+      parameters:
+        - name: bookId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Basarili
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Review"
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  schemas:
+    Book:
+      type: object
+      required:
+        - id
+        - title
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        price:
+          type: string
+        status:
+          type: string
+          enum: [available, sold]
+    BookInput:
+      type: object
+      required:
+        - title
+        - author
+      properties:
+        title:
+          type: string
+        author:
+          type: string
+        price:
+          type: number
+    Review:
+      type: object
+      required:
+        - id
+        - rating
+      properties:
+        id:
+          type: string
+        rating:
+          type: integer
+        comment:
+          type: string
