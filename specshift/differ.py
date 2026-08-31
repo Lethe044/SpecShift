@@ -1,6 +1,6 @@
 """
-Iki OpenAPI/Swagger spesifikasyonunu karsilastirip degisiklikleri
-breaking, warning veya info olarak siniflandiran ana diff motoru.
+Core diff engine that compares two OpenAPI/Swagger specifications and
+classifies each change as breaking, warning, or info.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "tra
 
 
 def diff_specs(old_spec: dict, new_spec: dict) -> DiffResult:
-    """Iki spesifikasyonu karsilastirir ve DiffResult olarak doner."""
+    """Compares two specifications and returns a DiffResult."""
     result = DiffResult(
         old_title=_get_info(old_spec, "title"),
         new_title=_get_info(new_spec, "title"),
@@ -46,7 +46,7 @@ def _diff_servers(old_spec: dict, new_spec: dict, result: DiffResult) -> None:
                 severity=Severity.WARNING,
                 change_type=ChangeType.REMOVED,
                 location="servers",
-                message=f"Sunucu adresi kaldirilmis: {url}",
+                message=f"Server URL removed: {url}",
                 old_value=url,
                 category="server",
             )
@@ -57,7 +57,7 @@ def _diff_servers(old_spec: dict, new_spec: dict, result: DiffResult) -> None:
                 severity=Severity.INFO,
                 change_type=ChangeType.ADDED,
                 location="servers",
-                message=f"Yeni sunucu adresi eklenmis: {url}",
+                message=f"New server URL added: {url}",
                 new_value=url,
                 category="server",
             )
@@ -74,7 +74,7 @@ def _diff_global_security(old_spec: dict, new_spec: dict, result: DiffResult) ->
                 severity=Severity.BREAKING,
                 change_type=ChangeType.ADDED,
                 location="security (global)",
-                message="API genelinde daha once zorunlu olmayan kimlik dogrulama artik zorunlu.",
+                message="Authentication is now required API-wide where it previously was not.",
                 new_value=new_sec,
                 category="security",
             )
@@ -85,7 +85,7 @@ def _diff_global_security(old_spec: dict, new_spec: dict, result: DiffResult) ->
                 severity=Severity.WARNING,
                 change_type=ChangeType.REMOVED,
                 location="security (global)",
-                message="API genelindeki zorunlu kimlik dogrulama kaldirilmis.",
+                message="The API-wide mandatory authentication requirement has been removed.",
                 old_value=old_sec,
                 category="security",
             )
@@ -103,7 +103,7 @@ def _diff_paths(old_spec: dict, new_spec: dict, result: DiffResult) -> None:
                     severity=Severity.BREAKING,
                     change_type=ChangeType.REMOVED,
                     location=path,
-                    message=f"Endpoint tamamen kaldirilmis: {path}",
+                    message=f"Endpoint completely removed: {path}",
                     category="path",
                 )
             )
@@ -115,7 +115,7 @@ def _diff_paths(old_spec: dict, new_spec: dict, result: DiffResult) -> None:
                     severity=Severity.INFO,
                     change_type=ChangeType.ADDED,
                     location=path,
-                    message=f"Yeni endpoint eklenmis: {path}",
+                    message=f"New endpoint added: {path}",
                     category="path",
                 )
             )
@@ -142,7 +142,7 @@ def _diff_operations(
                 severity=Severity.BREAKING,
                 change_type=ChangeType.REMOVED,
                 location=f"{method.upper()} {path}",
-                message=f"HTTP metodu kaldirilmis: {method.upper()} {path}",
+                message=f"HTTP method removed: {method.upper()} {path}",
                 category="operation",
             )
         )
@@ -153,7 +153,7 @@ def _diff_operations(
                 severity=Severity.INFO,
                 change_type=ChangeType.ADDED,
                 location=f"{method.upper()} {path}",
-                message=f"Yeni HTTP metodu eklenmis: {method.upper()} {path}",
+                message=f"New HTTP method added: {method.upper()} {path}",
                 category="operation",
             )
         )
@@ -169,7 +169,7 @@ def _diff_operations(
                     severity=Severity.WARNING,
                     change_type=ChangeType.MODIFIED,
                     location=loc,
-                    message="Operasyon deprecated (kullanimdan kaldirilacak) olarak isaretlenmis.",
+                    message="Operation has been marked as deprecated.",
                     category="operation",
                 )
             )
@@ -193,7 +193,7 @@ def _diff_operation_security(loc: str, old_op: dict, new_op: dict, result: DiffR
                 severity=Severity.BREAKING,
                 change_type=ChangeType.ADDED,
                 location=loc,
-                message="Bu operasyona yeni bir zorunlu kimlik dogrulama sarti eklenmis.",
+                message="A new mandatory authentication requirement has been added to this operation.",
                 category="security",
             )
         )
@@ -203,7 +203,7 @@ def _diff_operation_security(loc: str, old_op: dict, new_op: dict, result: DiffR
                 severity=Severity.WARNING,
                 change_type=ChangeType.REMOVED,
                 location=loc,
-                message="Bu operasyon icin kimlik dogrulama sarti kaldirilmis.",
+                message="The authentication requirement for this operation has been removed.",
                 category="security",
             )
         )
@@ -238,7 +238,7 @@ def _diff_parameters(
                     severity=severity,
                     change_type=ChangeType.REMOVED,
                     location=loc,
-                    message=f"'{name}' ({location_in}) parametresi kaldirilmis.",
+                    message=f"Parameter '{name}' ({location_in}) has been removed.",
                     category="parameter",
                 )
             )
@@ -249,9 +249,9 @@ def _diff_parameters(
             required = bool(param.get("required")) or location_in == "path"
             severity = Severity.BREAKING if required else Severity.INFO
             message = (
-                f"Yeni zorunlu parametre eklenmis: '{name}' ({location_in})."
+                f"New required parameter added: '{name}' ({location_in})."
                 if required
-                else f"Yeni istege bagli parametre eklenmis: '{name}' ({location_in})."
+                else f"New optional parameter added: '{name}' ({location_in})."
             )
             result.add(
                 Change(
@@ -267,7 +267,7 @@ def _diff_parameters(
         name, location_in = key
         old_param = old_params[key]
         new_param = new_params[key]
-        param_loc = f"{loc} > parametre '{name}'"
+        param_loc = f"{loc} > parameter '{name}'"
 
         old_required = bool(old_param.get("required")) or location_in == "path"
         new_required = bool(new_param.get("required")) or location_in == "path"
@@ -278,7 +278,7 @@ def _diff_parameters(
                     severity=Severity.BREAKING,
                     change_type=ChangeType.MODIFIED,
                     location=param_loc,
-                    message=f"'{name}' parametresi artik zorunlu.",
+                    message=f"Parameter '{name}' is now required.",
                     category="parameter",
                 )
             )
@@ -288,7 +288,7 @@ def _diff_parameters(
                     severity=Severity.INFO,
                     change_type=ChangeType.MODIFIED,
                     location=param_loc,
-                    message=f"'{name}' parametresi artik istege bagli.",
+                    message=f"Parameter '{name}' is now optional.",
                     category="parameter",
                 )
             )
@@ -331,7 +331,7 @@ def _diff_request_body(
                 severity=Severity.BREAKING,
                 change_type=ChangeType.REMOVED,
                 location=loc,
-                message="Request body tamamen kaldirilmis.",
+                message="Request body has been completely removed.",
                 category="request_body",
             )
         )
@@ -344,8 +344,8 @@ def _diff_request_body(
                 severity=Severity.BREAKING if required else Severity.INFO,
                 change_type=ChangeType.ADDED,
                 location=loc,
-                message="Yeni bir request body eklenmis"
-                + (" ve zorunlu kilinmis." if required else " (istege bagli)."),
+                message="A new request body has been added"
+                + (" and made required." if required else " (optional)."),
                 category="request_body",
             )
         )
@@ -362,7 +362,7 @@ def _diff_request_body(
                 severity=Severity.BREAKING,
                 change_type=ChangeType.MODIFIED,
                 location=loc,
-                message="Request body artik zorunlu.",
+                message="Request body is now required.",
                 category="request_body",
             )
         )
@@ -396,7 +396,7 @@ def _diff_responses(
                     severity=Severity.BREAKING if is_success else Severity.WARNING,
                     change_type=ChangeType.REMOVED,
                     location=loc,
-                    message=f"'{status}' yaniti tanimindan kaldirilmis.",
+                    message=f"Response '{status}' has been removed from the definition.",
                     category="response",
                 )
             )
@@ -408,13 +408,13 @@ def _diff_responses(
                     severity=Severity.INFO,
                     change_type=ChangeType.ADDED,
                     location=loc,
-                    message=f"Yeni '{status}' yaniti eklenmis.",
+                    message=f"New response '{status}' has been added.",
                     category="response",
                 )
             )
 
     for status in set(old_responses) & set(new_responses):
-        resp_loc = f"{loc} > yanit {status}"
+        resp_loc = f"{loc} > response {status}"
         old_schema = _get_json_schema(old_responses[status].get("content", {}), old_spec)
         new_schema = _get_json_schema(new_responses[status].get("content", {}), new_spec)
 
@@ -431,7 +431,7 @@ def _diff_responses(
 
 
 def _merge_all_of(schema: dict, root_spec: dict, _depth: int = 0) -> dict:
-    """allOf icindeki alt semalari tek bir semaya birlestirir (basit birlestirme)."""
+    """Merges the sub-schemas inside allOf into a single schema (simple merge)."""
     if _depth > 10 or "allOf" not in schema:
         return schema
 
@@ -499,14 +499,14 @@ def _diff_schema(
 
     for name in old_props:
         if name not in new_props:
-            field_loc = f"{loc} > alan '{name}'"
+            field_loc = f"{loc} > field '{name}'"
             if context == "response":
                 result.add(
                     Change(
                         severity=Severity.BREAKING,
                         change_type=ChangeType.REMOVED,
                         location=field_loc,
-                        message=f"'{name}' alani yanittan kaldirilmis, bu alana bagimli istemciler etkilenir.",
+                        message=f"Field '{name}' has been removed from the response, clients relying on it are affected.",
                         category="schema",
                     )
                 )
@@ -516,14 +516,14 @@ def _diff_schema(
                         severity=Severity.WARNING,
                         change_type=ChangeType.REMOVED,
                         location=field_loc,
-                        message=f"'{name}' alani artik kabul edilmiyor (request semasindan kaldirilmis).",
+                        message=f"Field '{name}' is no longer accepted (removed from the request schema).",
                         category="schema",
                     )
                 )
 
     for name in new_props:
         if name not in old_props:
-            field_loc = f"{loc} > alan '{name}'"
+            field_loc = f"{loc} > field '{name}'"
             is_new_required = name in new_required
             if context == "request" and is_new_required:
                 result.add(
@@ -531,7 +531,7 @@ def _diff_schema(
                         severity=Severity.BREAKING,
                         change_type=ChangeType.ADDED,
                         location=field_loc,
-                        message=f"Yeni zorunlu alan eklenmis: '{name}'. Mevcut istemciler bu alani gondermeli.",
+                        message=f"New required field added: '{name}'. Existing clients must now send it.",
                         category="schema",
                     )
                 )
@@ -541,21 +541,21 @@ def _diff_schema(
                         severity=Severity.INFO,
                         change_type=ChangeType.ADDED,
                         location=field_loc,
-                        message=f"Yeni alan eklenmis: '{name}'.",
+                        message=f"New field added: '{name}'.",
                         category="schema",
                     )
                 )
 
     newly_required = (new_required - old_required) & set(old_props) & set(new_props)
     for name in newly_required:
-        field_loc = f"{loc} > alan '{name}'"
+        field_loc = f"{loc} > field '{name}'"
         if context == "request":
             result.add(
                 Change(
                     severity=Severity.BREAKING,
                     change_type=ChangeType.MODIFIED,
                     location=field_loc,
-                    message=f"'{name}' alani artik zorunlu.",
+                    message=f"Field '{name}' is now required.",
                     category="schema",
                 )
             )
@@ -565,21 +565,21 @@ def _diff_schema(
                     severity=Severity.INFO,
                     change_type=ChangeType.MODIFIED,
                     location=field_loc,
-                    message=f"'{name}' alani artik her zaman garanti ediliyor.",
+                    message=f"Field '{name}' is now always guaranteed to be present.",
                     category="schema",
                 )
             )
 
     no_longer_required = (old_required - new_required) & set(old_props) & set(new_props)
     for name in no_longer_required:
-        field_loc = f"{loc} > alan '{name}'"
+        field_loc = f"{loc} > field '{name}'"
         if context == "response":
             result.add(
                 Change(
                     severity=Severity.BREAKING,
                     change_type=ChangeType.MODIFIED,
                     location=field_loc,
-                    message=f"'{name}' alani artik garanti edilmiyor (opsiyonel oldu).",
+                    message=f"Field '{name}' is no longer guaranteed to be present (became optional).",
                     category="schema",
                 )
             )
@@ -589,7 +589,7 @@ def _diff_schema(
                     severity=Severity.INFO,
                     change_type=ChangeType.MODIFIED,
                     location=field_loc,
-                    message=f"'{name}' alani artik istege bagli.",
+                    message=f"Field '{name}' is now optional.",
                     category="schema",
                 )
             )
@@ -598,7 +598,7 @@ def _diff_schema(
         _diff_schema(
             old_props[name],
             new_props[name],
-            f"{loc} > alan '{name}'",
+            f"{loc} > field '{name}'",
             old_spec,
             new_spec,
             result,
@@ -616,7 +616,7 @@ def _diff_schema_type(old_schema: dict, new_schema: dict, loc: str, result: Diff
                 severity=Severity.BREAKING,
                 change_type=ChangeType.MODIFIED,
                 location=loc,
-                message=f"Veri tipi degisti: '{old_type}' -> '{new_type}'.",
+                message=f"Data type changed: '{old_type}' -> '{new_type}'.",
                 old_value=old_type,
                 new_value=new_type,
                 category="schema",
@@ -632,7 +632,7 @@ def _diff_schema_type(old_schema: dict, new_schema: dict, loc: str, result: Diff
                 severity=Severity.WARNING,
                 change_type=ChangeType.MODIFIED,
                 location=loc,
-                message=f"Format degisti: '{old_format}' -> '{new_format}'.",
+                message=f"Format changed: '{old_format}' -> '{new_format}'.",
                 old_value=old_format,
                 new_value=new_format,
                 category="schema",
@@ -658,7 +658,7 @@ def _diff_schema_enum(old_schema: dict, new_schema: dict, loc: str, result: Diff
                 severity=Severity.INFO,
                 change_type=ChangeType.MODIFIED,
                 location=loc,
-                message="Enum kisitlamasi tamamen kaldirilmis, artik her deger kabul ediliyor.",
+                message="Enum constraint has been completely removed, any value is now accepted.",
                 category="schema",
             )
         )
@@ -670,7 +670,7 @@ def _diff_schema_enum(old_schema: dict, new_schema: dict, loc: str, result: Diff
                 severity=Severity.BREAKING,
                 change_type=ChangeType.MODIFIED,
                 location=loc,
-                message=f"Enum degerleri kaldirilmis: {sorted(str(v) for v in removed_values)}.",
+                message=f"Enum values removed: {sorted(str(v) for v in removed_values)}.",
                 old_value=list(removed_values),
                 category="schema",
             )
@@ -681,7 +681,7 @@ def _diff_schema_enum(old_schema: dict, new_schema: dict, loc: str, result: Diff
                 severity=Severity.INFO,
                 change_type=ChangeType.MODIFIED,
                 location=loc,
-                message=f"Yeni enum degerleri eklenmis: {sorted(str(v) for v in added_values)}.",
+                message=f"New enum values added: {sorted(str(v) for v in added_values)}.",
                 new_value=list(added_values),
                 category="schema",
             )
@@ -704,7 +704,7 @@ def _diff_schema_nullable(
                 severity=severity,
                 change_type=ChangeType.MODIFIED,
                 location=loc,
-                message="Alan artik null kabul etmiyor.",
+                message="Field no longer accepts null.",
                 category="schema",
             )
         )
@@ -715,7 +715,7 @@ def _diff_schema_nullable(
                 severity=severity,
                 change_type=ChangeType.MODIFIED,
                 location=loc,
-                message="Alan artik null degeri kabul ediyor.",
+                message="Field now accepts a null value.",
                 category="schema",
             )
         )

@@ -1,30 +1,31 @@
-# Degisiklik Gecmisi
+# Changelog
 
-Bu proje [Semantic Versioning](https://semver.org/) prensiplerini takip eder.
+This project follows [Semantic Versioning](https://semver.org/).
 
 ## [1.0.0] - 2026-08-31
 
-### Eklendi
-- OpenAPI 3.x ve Swagger 2.0 spesifikasyonlarini dosya, URL veya git
-  referansindan yukleme destegi.
-- Path, operasyon, parametre, request body, response ve semalar dahil
-  kapsamli yapisal diff motoru.
-- Degisikliklerin breaking, warning ve info olarak baglama duyarli
-  siniflandirilmasi (ayni degisiklik request'te ve response'ta farkli
-  agirlikta degerlendirilir).
-- `$ref` cozumleme ve `allOf` birlestirme destegi.
-- Enum, format, nullable, required alan ve guvenlik semasi degisikliklerinin
-  tespiti.
-- Konsol (rich destekli renkli tablo), Markdown ve JSON rapor formatlari.
-- Istege bagli yapay zeka destekli dogal dil ozeti (Groq, Gemini veya
-  OpenAI uyumlu herhangi bir uc nokta), API anahtari olmadan calisan
-  sablon tabanli fallback ozet ile birlikte.
-- Slack ve Discord webhook bildirimleri.
-- `specshift check` komutu ile CI/CD entegrasyonu: mevcut spesifikasyonu
-  bir git referansiyla (branch, tag, commit) karsilastirip kirici
-  degisiklik varsa build'i basarisiz kilma.
-- `specshift watch` komutu ile canli bir API spesifikasyonunu periyodik
-  olarak izleme ve degisiklikte otomatik bildirim gonderme.
-- `.specshift.yml` yapilandirma dosyasi destegi ve `specshift init` komutu.
-- GitHub Actions ile calisan CI ve PyPI yayin workflow'lari.
-- Kapsamli test paketi ve iki ornek OpenAPI spesifikasyonu.
+### Added
+- Support for loading OpenAPI 3.x and Swagger 2.0 specifications from a
+  file, a URL, or a git reference.
+- A comprehensive structural diff engine covering paths, operations,
+  parameters, request bodies, responses, and schemas.
+- Context-aware classification of changes into breaking, warning, and info
+  (the same change is weighted differently in a request versus a response).
+- `$ref` resolution and `allOf` merging support.
+- Detection of enum, format, nullable, required-field, and security scheme
+  changes.
+- Console (with optional rich-powered colored table), Markdown, and JSON
+  report formats.
+- Optional AI-powered natural-language summary (Groq, Gemini, or any
+  OpenAI-compatible endpoint), with a rule-based fallback summary that
+  works without any API key.
+- Slack and Discord webhook notifications.
+- The `specshift check` command for CI/CD integration: compares the
+  current specification against a git reference (branch, tag, commit) and
+  fails the build if a breaking change is found.
+- The `specshift watch` command for periodically monitoring a live API
+  specification and automatically notifying on changes.
+- `.specshift.yml` configuration file support and the `specshift init`
+  command.
+- GitHub Actions workflows for CI and PyPI publishing.
+- A comprehensive test suite and two example OpenAPI specifications.

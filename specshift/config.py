@@ -1,4 +1,4 @@
-"""'.specshift.yml' yapilandirma dosyasini okuyup varsayilan degerlerle birlestirir."""
+"""Reads the '.specshift.yml' configuration file and merges it with defaults."""
 
 from __future__ import annotations
 
@@ -52,28 +52,28 @@ class SpecShiftConfig:
 
 def write_default_config(path: str = ".specshift.yml") -> None:
     content = """\
-# specshift yapilandirma dosyasi
-# Detayli aciklamalar icin: https://github.com/Lethe044/specshift
+# specshift configuration file
+# For detailed documentation, see: https://github.com/Lethe044/specshift
 
-# Takip edilecek OpenAPI/Swagger dosyasinin yolu (repo kokune gore)
+# Path to the OpenAPI/Swagger file to track (relative to the repo root)
 spec_path: openapi.yaml
 
-# Karsilastirma yapilacak temel git referansi (branch, tag veya commit)
+# The base git reference to compare against (branch, tag, or commit)
 base_ref: main
 
-# CI'da hangi seviyede build'in basarisiz sayilacagini belirler: breaking | warning | none
+# Determines at which severity level the CI build should fail: breaking | warning | none
 fail_on: breaking
 
-# Istege bagli: dogal dil ozeti icin AI saglayicisi (groq | gemini | openai_compatible)
-# API anahtari ortam degiskeni olarak verilmelidir: GROQ_API_KEY veya GEMINI_API_KEY
+# Optional: AI provider for the natural-language summary (groq | gemini | openai_compatible)
+# The API key must be provided as an environment variable: GROQ_API_KEY or GEMINI_API_KEY
 # ai_provider: groq
 # ai_model: llama-3.3-70b-versatile
 
-# Istege bagli: bildirim webhook adresleri
+# Optional: notification webhook URLs
 # slack_webhook: https://hooks.slack.com/services/...
 # discord_webhook: https://discord.com/api/webhooks/...
 
-# Diff sirasinda yok sayilacak path desenleri (opsiyonel)
+# Path patterns to ignore during the diff (optional)
 ignore_paths: []
 """
     Path(path).write_text(content, encoding="utf-8")

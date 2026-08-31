@@ -1,4 +1,4 @@
-"""DiffResult nesnesini okunabilir raporlara donusturur."""
+"""Renders a DiffResult into console, Markdown, and JSON reports."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ try:
     from rich.text import Text
 
     _HAS_RICH = True
-except ImportError:  # rich yuklu degilse duz metne dus
+except ImportError:  # fall back to plain text if rich is not installed
     _HAS_RICH = False
 
 _SEVERITY_COLORS = {
@@ -24,7 +24,7 @@ _SEVERITY_COLORS = {
 
 
 def print_console_report(result: DiffResult, verbose: bool = True) -> None:
-    """Sonucu terminale renkli sekilde yazdirir. Rich yoksa duz metne duser."""
+    """Prints the result to the terminal with colors. Falls back to plain text without rich."""
     if _HAS_RICH:
         _print_rich_report(result, verbose=verbose)
     else:
@@ -35,24 +35,24 @@ def _print_rich_report(result: DiffResult, verbose: bool) -> None:
     console = Console()
     counts = result.summary_counts()
 
-    header = f"{result.old_title or 'Spesifikasyon'} : {result.old_version} -> {result.new_version}"
+    header = f"{result.old_title or 'Specification'} : {result.old_version} -> {result.new_version}"
     console.print(f"\n[bold]{header}[/bold]")
     console.print(
-        f"[bold red]{counts['breaking']} kirici[/bold red], "
-        f"[bold yellow]{counts['warning']} uyari[/bold yellow], "
-        f"[cyan]{counts['info']} bilgi[/cyan] degisiklik bulundu.\n"
+        f"[bold red]{counts['breaking']} breaking[/bold red], "
+        f"[bold yellow]{counts['warning']} warning[/bold yellow], "
+        f"[cyan]{counts['info']} info[/cyan] changes found.\n"
     )
 
     if result.is_empty:
-        console.print("[green]Iki spesifikasyon arasinda fark bulunamadi.[/green]")
+        console.print("[green]No differences found between the two specifications.[/green]")
         return
 
     changes = result.sorted_changes() if verbose else result.breaking_changes + result.warnings
 
     table = Table(show_lines=False, expand=True)
-    table.add_column("Seviye", width=10)
-    table.add_column("Konum", ratio=1)
-    table.add_column("Aciklama", ratio=2)
+    table.add_column("Severity", width=10)
+    table.add_column("Location", ratio=1)
+    table.add_column("Description", ratio=2)
 
     for change in changes:
         color = _SEVERITY_COLORS.get(change.severity, "white")
@@ -66,25 +66,25 @@ def _print_rich_report(result: DiffResult, verbose: bool) -> None:
 
     if result.has_breaking_changes:
         console.print(
-            f"\n[bold red]Sonuc: {counts['breaking']} kirici degisiklik nedeniyle "
-            "bu spesifikasyon guncellemesi tuketiciler icin risklidir.[/bold red]"
+            f"\n[bold red]Result: {counts['breaking']} breaking change(s) make this "
+            "specification update risky for consumers.[/bold red]"
         )
     else:
-        console.print("\n[bold green]Sonuc: kirici degisiklik bulunamadi.[/bold green]")
+        console.print("\n[bold green]Result: no breaking changes found.[/bold green]")
 
 
 def render_plain_text_report(result: DiffResult, verbose: bool = True) -> str:
     lines: list[str] = []
     counts = result.summary_counts()
 
-    lines.append(f"{result.old_title or 'Spesifikasyon'} : {result.old_version} -> {result.new_version}")
+    lines.append(f"{result.old_title or 'Specification'} : {result.old_version} -> {result.new_version}")
     lines.append(
-        f"{counts['breaking']} kirici, {counts['warning']} uyari, {counts['info']} bilgi degisiklik bulundu."
+        f"{counts['breaking']} breaking, {counts['warning']} warning, {counts['info']} info changes found."
     )
     lines.append("")
 
     if result.is_empty:
-        lines.append("Iki spesifikasyon arasinda fark bulunamadi.")
+        lines.append("No differences found between the two specifications.")
         return "\n".join(lines)
 
     changes = result.sorted_changes() if verbose else result.breaking_changes + result.warnings
@@ -95,10 +95,10 @@ def render_plain_text_report(result: DiffResult, verbose: bool = True) -> str:
     lines.append("")
     if result.has_breaking_changes:
         lines.append(
-            f"Sonuc: {counts['breaking']} kirici degisiklik nedeniyle bu guncelleme risklidir."
+            f"Result: {counts['breaking']} breaking change(s) make this update risky."
         )
     else:
-        lines.append("Sonuc: kirici degisiklik bulunamadi.")
+        lines.append("Result: no breaking changes found.")
 
     return "\n".join(lines)
 
@@ -108,35 +108,35 @@ def render_markdown_report(result: DiffResult, ai_summary: str | None = None) ->
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     lines: list[str] = []
-    lines.append(f"# API Kontrat Degisiklik Raporu")
+    lines.append(f"# API Contract Change Report")
     lines.append("")
-    lines.append(f"**Kaynak:** {result.old_title or 'API'} ({result.old_version} -> {result.new_version})")
-    lines.append(f"**Olusturulma zamani:** {timestamp}")
+    lines.append(f"**Source:** {result.old_title or 'API'} ({result.old_version} -> {result.new_version})")
+    lines.append(f"**Generated at:** {timestamp}")
     lines.append("")
 
     if result.has_breaking_changes:
-        lines.append(f"## Ozet: {counts['breaking']} kirici degisiklik bulundu")
+        lines.append(f"## Summary: {counts['breaking']} breaking change(s) found")
     else:
-        lines.append("## Ozet: kirici degisiklik bulunamadi")
+        lines.append("## Summary: no breaking changes found")
 
     lines.append("")
-    lines.append(f"| Seviye | Sayi |")
+    lines.append(f"| Severity | Count |")
     lines.append(f"|---|---|")
-    lines.append(f"| Kirici (breaking) | {counts['breaking']} |")
-    lines.append(f"| Uyari (warning) | {counts['warning']} |")
-    lines.append(f"| Bilgi (info) | {counts['info']} |")
+    lines.append(f"| Breaking | {counts['breaking']} |")
+    lines.append(f"| Warning | {counts['warning']} |")
+    lines.append(f"| Info | {counts['info']} |")
     lines.append("")
 
     if ai_summary:
-        lines.append("## Yapay Zeka Ozeti")
+        lines.append("## AI Summary")
         lines.append("")
         lines.append(ai_summary)
         lines.append("")
 
     for severity, title in (
-        (Severity.BREAKING, "Kirici Degisiklikler"),
-        (Severity.WARNING, "Uyarilar"),
-        (Severity.INFO, "Bilgi Amacli Degisiklikler"),
+        (Severity.BREAKING, "Breaking Changes"),
+        (Severity.WARNING, "Warnings"),
+        (Severity.INFO, "Informational Changes"),
     ):
         changes = [c for c in result.sorted_changes() if c.severity == severity]
         if not changes:
@@ -148,7 +148,7 @@ def render_markdown_report(result: DiffResult, ai_summary: str | None = None) ->
         lines.append("")
 
     if result.is_empty:
-        lines.append("Iki spesifikasyon arasinda hicbir fark bulunamadi.")
+        lines.append("No differences were found between the two specifications.")
 
     return "\n".join(lines)
 

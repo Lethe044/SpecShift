@@ -1,4 +1,4 @@
-"""Diff sonuclarini temsil eden veri modelleri."""
+"""Data models representing diff results."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any, Optional
 
 
 class Severity(str, Enum):
-    """Bir degisikligin ciddiyet seviyesi."""
+    """Severity level of a detected change."""
 
     BREAKING = "breaking"
     WARNING = "warning"
@@ -24,7 +24,7 @@ class Severity(str, Enum):
 
 
 class ChangeType(str, Enum):
-    """Degisikligin turu."""
+    """The type of change that occurred."""
 
     ADDED = "added"
     REMOVED = "removed"
@@ -33,7 +33,7 @@ class ChangeType(str, Enum):
 
 @dataclass
 class Change:
-    """Eski ve yeni spesifikasyon arasindaki tek bir degisikligi temsil eder."""
+    """Represents a single change between the old and new specification."""
 
     severity: Severity
     change_type: ChangeType
@@ -67,7 +67,7 @@ def _safe_repr(value: Any) -> Any:
 
 @dataclass
 class DiffResult:
-    """Iki spesifikasyon arasindaki tum degisikliklerin toplu sonucu."""
+    """The aggregated result of all changes between two specifications."""
 
     changes: list[Change] = field(default_factory=list)
     old_title: str = ""

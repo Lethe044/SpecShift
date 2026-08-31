@@ -1,4 +1,4 @@
-"""Dosyadan, URL'den veya ham metinden OpenAPI/Swagger spesifikasyonu yukler."""
+"""Loads an OpenAPI/Swagger specification from a file, URL, or raw text."""
 
 from __future__ import annotations
 
@@ -12,14 +12,14 @@ import yaml
 
 
 class SpecLoadError(Exception):
-    """Spesifikasyon yuklenemedigi zaman firlatilir."""
+    """Raised when a specification cannot be loaded."""
 
 
 def _parse_text(text: str, hint: str = "") -> dict:
-    """Metni once JSON, olmazsa YAML olarak ayristirmaya calisir."""
+    """Tries to parse text as JSON first, then falls back to YAML."""
     stripped = text.strip()
     if not stripped:
-        raise SpecLoadError(f"Bos icerik: {hint}")
+        raise SpecLoadError(f"Empty content: {hint}")
 
     if stripped.startswith("{") or stripped.startswith("["):
         try:
@@ -30,16 +30,16 @@ def _parse_text(text: str, hint: str = "") -> dict:
     try:
         data = yaml.safe_load(stripped)
     except yaml.YAMLError as exc:
-        raise SpecLoadError(f"YAML/JSON ayristirma hatasi ({hint}): {exc}") from exc
+        raise SpecLoadError(f"YAML/JSON parsing error ({hint}): {exc}") from exc
 
     if not isinstance(data, dict):
-        raise SpecLoadError(f"Spesifikasyon bir obje (mapping) degil: {hint}")
+        raise SpecLoadError(f"Specification is not an object/mapping: {hint}")
 
     return data
 
 
 def parse_spec_text(text: str, hint: str = "") -> dict:
-    """Disaridan cagrilabilen genel metin ayristirma fonksiyonu."""
+    """Public entry point for parsing raw specification text."""
     return _parse_text(text, hint=hint)
 
 
@@ -49,9 +49,9 @@ def is_url(source: str) -> bool:
 
 def load_spec(source: str, timeout: int = 15) -> dict:
     """
-    Bir OpenAPI/Swagger spesifikasyonunu yukler.
+    Loads an OpenAPI/Swagger specification.
 
-    source bir URL, bir dosya yolu veya dogrudan JSON/YAML metni olabilir.
+    source can be a URL, a file path, or raw JSON/YAML text.
     """
     source = source.strip()
 
@@ -63,11 +63,11 @@ def load_spec(source: str, timeout: int = 15) -> dict:
         return _load_from_file(path)
 
     if source.startswith("{") or "openapi:" in source or "swagger:" in source:
-        return _parse_text(source, hint="satir ici metin")
+        return _parse_text(source, hint="inline text")
 
     raise SpecLoadError(
-        f"Kaynak bulunamadi veya taninmadi: '{source}'. "
-        "Bir dosya yolu, http(s) URL veya JSON/YAML metni bekleniyor."
+        f"Source not found or not recognized: '{source}'. "
+        "Expected a file path, an http(s) URL, or raw JSON/YAML text."
     )
 
 
@@ -76,7 +76,7 @@ def _load_from_url(url: str, timeout: int = 15) -> dict:
         response = requests.get(url, timeout=timeout, headers={"Accept": "application/json, text/yaml, */*"})
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise SpecLoadError(f"URL alinamadi '{url}': {exc}") from exc
+        raise SpecLoadError(f"Could not fetch URL '{url}': {exc}") from exc
 
     return _parse_text(response.text, hint=url)
 
@@ -85,15 +85,15 @@ def _load_from_file(path: Path) -> dict:
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        raise SpecLoadError(f"Dosya okunamadi '{path}': {exc}") from exc
+        raise SpecLoadError(f"Could not read file '{path}': {exc}") from exc
 
     return _parse_text(text, hint=str(path))
 
 
 def resolve_ref(ref: str, root_spec: dict) -> dict:
     """
-    '#/components/schemas/User' gibi bir JSON pointer referansini cozer.
-    Cozulemezse bos bir sozluk doner.
+    Resolves a JSON pointer reference such as '#/components/schemas/User'.
+    Returns an empty dict if it cannot be resolved.
     """
     if not ref.startswith("#/"):
         return {}
@@ -111,7 +111,7 @@ def resolve_ref(ref: str, root_spec: dict) -> dict:
 
 
 def resolve_schema(schema: dict, root_spec: dict, _depth: int = 0) -> dict:
-    """Bir semadaki $ref alanini gerekirse takip ederek gercek semayi doner."""
+    """Follows a schema's $ref field (if present) and returns the resolved schema."""
     if _depth > 20 or not isinstance(schema, dict):
         return schema if isinstance(schema, dict) else {}
 

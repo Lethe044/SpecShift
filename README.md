@@ -5,86 +5,87 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/specshift.svg)](https://pypi.org/project/specshift/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-SpecShift, OpenAPI ve Swagger sozlesmelerindeki (contract) degisiklikleri
-tespit eden, bu degisiklikleri breaking, warning ve info olarak siniflandiran
-ve isterseniz dogal dilde ozetleyen bir komut satiri araci.
+SpecShift detects changes in OpenAPI and Swagger contracts, classifies each
+one as breaking, warning, or info, and can optionally summarize them in
+plain language.
 
-Bir API surumden surume degistiginde asil soru "ne degisti" degil, "bu
-degisiklik beni kirar mi" sorusudur. SpecShift tam olarak bunu cevaplamak
-icin yazildi: iki spesifikasyonu alir, aralarindaki her farki tek tek
-degerlendirir ve hangisinin gercekten tehlikeli oldugunu soyler.
+When an API changes from one version to the next, the real question isn't
+"what changed" but "will this break me". SpecShift is built to answer
+exactly that: it takes two specifications, evaluates every difference
+between them individually, and tells you which ones actually matter.
 
 ```
 $ specshift diff examples/old_api.yaml examples/new_api.yaml
 
 Bookstore API : 1.0.0 -> 2.0.0
-13 kirici, 2 uyari, 3 bilgi degisiklik bulundu.
+13 breaking, 2 warning, 3 info changes found.
 
-[BREAKING] DELETE /books/{bookId} :: HTTP metodu kaldirilmis
-[BREAKING] GET /books > parametre 'category' :: 'category' parametresi artik zorunlu
-[BREAKING] GET /books > yanit 200 > alan 'author' :: alan yanittan kaldirilmis
+[BREAKING] DELETE /books/{bookId} :: HTTP method removed
+[BREAKING] GET /books > parameter 'category' :: Parameter 'category' is now required
+[BREAKING] GET /books > response 200 > field 'author' :: field removed from response
 ...
 
-Sonuc: 13 kirici degisiklik nedeniyle bu guncelleme risklidir.
+Result: 13 breaking change(s) make this update risky.
 ```
 
-## Neden SpecShift
+## Why SpecShift
 
-API'lerini surekli gelistiren her ekip er ya da gec ayni soruna carpar:
-bir alan kaldirilir, bir parametre zorunlu hale gelir, bir enum degeri
-silinir ve bunu fark eden kimse olmaz ta ki bir istemci production'da
-patlayana kadar. Mevcut diff araclari genelde ham JSON farki gosterir ve
-hangi degisikligin gercekten onemli oldugunu yorumlamayi size birakir.
+Every team that keeps evolving its API eventually hits the same problem:
+a field gets removed, a parameter becomes required, an enum value
+disappears, and nobody notices until a client breaks in production.
+Most existing diff tools just show you a raw JSON diff and leave it up to
+you to figure out what actually matters.
 
-SpecShift bunu yapmiyor. Her degisikligi baglamina gore degerlendiriyor:
+SpecShift doesn't do that. It evaluates every change based on its context:
 
-- Bir alanin response'tan kaldirilmasi **kirici**dir, cunku istemciler ona
-  guvenmis olabilir.
-- Ayni alanin request body'den kaldirilmasi genelde **sadece bir uyaridir**,
-  cunku gonderen istemciler etkilenmez, sadece artik dikkate alinmaz.
-- Request'e yeni zorunlu bir alan eklemek **kiricidir**, ama response'a
-  yeni bir alan eklemek sadece **bilgi amaclidir**.
+- Removing a field from a **response** is **breaking**, because clients
+  may depend on it being there.
+- Removing the same field from a **request body** is usually just a
+  **warning**, because clients that send it are simply ignored, not broken.
+- Adding a new required field to a request is **breaking**, but adding a
+  new field to a response is just **informational**.
 
-Bu tur baglama duyarli kurallar SpecShift'in cekirdegini olusturuyor ve
-tamamen ucretsiz, herhangi bir API anahtari gerektirmeden calisiyor. Yapay
-zeka destekli dogal dil ozeti tamamen istege bagli bir ek katman.
+These context-aware rules are the core of SpecShift, and they work
+completely free, with no API key required. The optional AI-powered
+natural-language summary is an additional layer on top, never a
+requirement.
 
-## Ozellikler
+## Features
 
-- **Kapsamli yapisal diff**: path, HTTP metodu, parametre, request body,
-  response, sema (schema) seviyesinde derinlemesine karsilastirma.
-- **Baglam duyarli siniflandirma**: ayni degisiklik request ve response
-  baglaminda farkli agirlikta degerlendirilir.
-- **`$ref` cozumleme ve `allOf` birlestirme**: gercek dunya spesifikasyonlarinda
-  yaygin olan referans ve kompozisyon kaliplarini dogru sekilde takip eder.
-- **Enum, format, nullable ve guvenlik semasi degisikliklerinin tespiti**.
-- **Ucretsiz calisir**: hicbir API anahtari veya ucretli servis gerektirmez.
-- **Istege bagli AI ozeti**: Groq, Gemini free tier veya OpenAI uyumlu
-  herhangi bir uc nokta ile dogal dilde ozet uretebilir. Anahtar yoksa
-  sablon tabanli bir ozete otomatik olarak duser, hicbir zaman calismayi
-  durdurmaz.
-- **CI/CD entegrasyonu**: `specshift check` komutu, mevcut spesifikasyonu
-  bir git dalindaki (branch) surumle karsilastirir ve kirici degisiklik
-  varsa build'i basarisiz kilar.
-- **Canli izleme**: `specshift watch` komutu, uzak bir API'nin spesifikasyonunu
-  periyodik olarak kontrol eder ve degisiklikte Slack veya Discord'a bildirim
-  gonderir.
-- **Uc cikti formati**: renkli konsol tablosu, Markdown raporu (PR yorumlari
-  icin idealdir) ve JSON (baska araclarla entegrasyon icin).
+- **Comprehensive structural diff**: deep comparison at the path, HTTP
+  method, parameter, request body, response, and schema level.
+- **Context-aware classification**: the same change is weighted
+  differently depending on whether it occurs in a request or a response.
+- **`$ref` resolution and `allOf` merging**: correctly follows the
+  reference and composition patterns common in real-world specifications.
+- **Detects enum, format, nullable, and security scheme changes**.
+- **Works entirely for free**: no API key or paid service is required.
+- **Optional AI summary**: can generate a natural-language summary using
+  Groq, the Gemini free tier, or any OpenAI-compatible endpoint. If no key
+  is set, it automatically falls back to a rule-based summary and never
+  stops working.
+- **CI/CD integration**: the `specshift check` command compares the
+  current specification against a branch and fails the build if a
+  breaking change is found.
+- **Live monitoring**: the `specshift watch` command periodically checks
+  a remote API's specification and sends a Slack or Discord notification
+  when it changes.
+- **Three output formats**: a colored console table, a Markdown report
+  (ideal for PR comments), and JSON (for integrating with other tools).
 
-## Kurulum
+## Installation
 
 ```bash
 pip install specshift
 ```
 
-Renkli konsol ciktisi icin (istege bagli, olmadan da calisir):
+For colored console output (optional, works fine without it too):
 
 ```bash
 pip install "specshift[pretty]"
 ```
 
-Kaynak koddan kurulum:
+Installing from source:
 
 ```bash
 git clone https://github.com/Lethe044/specshift.git
@@ -92,27 +93,27 @@ cd specshift
 pip install -e .
 ```
 
-## Hizli baslangic
+## Quick start
 
-Iki spesifikasyonu dogrudan karsilastirin:
+Compare two specifications directly:
 
 ```bash
 specshift diff old_openapi.yaml new_openapi.yaml
 ```
 
-URL'lerden de karsilastirabilirsiniz:
+You can also compare specifications from URLs:
 
 ```bash
 specshift diff https://api.example.com/v1/openapi.json https://api.example.com/v2/openapi.json
 ```
 
-CI'da kullanmak icin repo'nuzda bir yapilandirma dosyasi olusturun:
+To use it in CI, create a configuration file in your repo:
 
 ```bash
 specshift init
 ```
 
-Bu, asagidakine benzer bir `.specshift.yml` uretir:
+This produces a `.specshift.yml` file similar to:
 
 ```yaml
 spec_path: openapi.yaml
@@ -120,68 +121,67 @@ base_ref: main
 fail_on: breaking
 ```
 
-Ardindan CI pipeline'inizda:
+Then, in your CI pipeline:
 
 ```bash
 specshift check
 ```
 
-komutu, mevcut `openapi.yaml` dosyasini `main` dalindaki halinden farki
-icin karsilastirir ve kirici bir degisiklik varsa cikis kodu 1 doner.
+This command compares the current `openapi.yaml` file against its version
+on the `main` branch and returns exit code 1 if a breaking change is found.
 
-## Yapay zeka ozeti (istege bagli)
+## AI summary (optional)
 
-SpecShift, degisikliklerin dogal dilde ozetini uretmek icin ucretsiz
-katmanli AI servislerini kullanabilir. Bunun icin herhangi bir odeme
-gerekmez:
+SpecShift can use free-tier AI services to generate a natural-language
+summary of the changes. This never requires any payment:
 
 ```bash
-export GROQ_API_KEY="sizin-groq-anahtariniz"
+export GROQ_API_KEY="your-groq-api-key"
 specshift diff old.yaml new.yaml --ai
 ```
 
-Groq yerine Google Gemini'nin ucretsiz katmanini da kullanabilirsiniz:
+You can also use Google Gemini's free tier instead of Groq:
 
 ```bash
-export GEMINI_API_KEY="sizin-gemini-anahtariniz"
+export GEMINI_API_KEY="your-gemini-api-key"
 specshift diff old.yaml new.yaml --ai --ai-provider gemini
 ```
 
-Daha guclu (ucretli) modeller kullanmak isteyenler icin OpenAI uyumlu
-herhangi bir uc noktayi da baglayabilirsiniz:
+If you want to use a more powerful (paid) model, you can connect any
+OpenAI-compatible endpoint:
 
 ```bash
-export SPECSHIFT_API_KEY="sizin-anahtariniz"
+export SPECSHIFT_API_KEY="your-api-key"
 export SPECSHIFT_OPENAI_BASE_URL="https://api.openai.com/v1"
 specshift diff old.yaml new.yaml --ai --ai-provider openai_compatible --ai-model gpt-4o-mini
 ```
 
-Hicbir anahtar tanimli degilse `--ai` bayragi hala calisir, sadece agdan
-sonuc beklemek yerine kural tabanli bir ozet uretir. Yani AI destegi bir
-zorunluluk degil, sadece bir ek katmandir.
+If no key is configured, the `--ai` flag still works, it simply produces a
+rule-based summary instead of waiting on a network call. AI support is an
+optional enhancement, never a requirement.
 
-## Komutlar
+## Commands
 
-### `specshift diff <eski> <yeni>`
+### `specshift diff <old> <new>`
 
-Iki spesifikasyonu karsilastirir. `<eski>` ve `<yeni>` bir dosya yolu, bir
-http(s) URL'si veya dogrudan JSON/YAML metni olabilir.
+Compares two specifications. `<old>` and `<new>` can be a file path, an
+http(s) URL, or raw JSON/YAML text.
 
-Faydali secenekler:
+Useful options:
 
-| Secenek | Aciklama |
+| Option | Description |
 |---|---|
-| `--format console\|markdown\|json` | Cikti formati (varsayilan: console) |
-| `--output <dosya>` | Ciktiyi bir dosyaya yazar |
-| `--ai` | Dogal dil ozeti ekler |
-| `--ai-provider groq\|gemini\|openai_compatible` | AI saglayicisini secer |
-| `--fail-on breaking\|warning\|none` | Hangi seviyede cikis kodu 1 donecegini belirler |
-| `--quiet` | Sadece ozet satirini yazdirir |
+| `--format console\|markdown\|json` | Output format (default: console) |
+| `--output <file>` | Writes the output to a file |
+| `--ai` | Adds a natural-language summary |
+| `--ai-provider groq\|gemini\|openai_compatible` | Chooses the AI provider |
+| `--fail-on breaking\|warning\|none` | Determines at which level exit code 1 is returned |
+| `--quiet` | Only prints the summary line |
 
 ### `specshift check`
 
-CI/CD icin tasarlanmistir. Mevcut spesifikasyon dosyasini, `.specshift.yml`
-icinde tanimli bir git referansiyla (branch, tag veya commit) karsilastirir.
+Designed for CI/CD. Compares the current specification file against a git
+reference (branch, tag, or commit) defined in `.specshift.yml`.
 
 ```bash
 specshift check --spec openapi.yaml --base-ref origin/main
@@ -189,8 +189,8 @@ specshift check --spec openapi.yaml --base-ref origin/main
 
 ### `specshift watch <url>`
 
-Uzak bir spesifikasyonu periyodik olarak kontrol eder, onceki anlik
-goruntuyle karsilastirir ve fark bulunursa bildirim gonderir.
+Periodically checks a remote specification, compares it against the
+previous snapshot, and sends a notification if a difference is found.
 
 ```bash
 specshift watch https://api.example.com/openapi.json \
@@ -200,13 +200,12 @@ specshift watch https://api.example.com/openapi.json \
 
 ### `specshift init`
 
-Ornek bir `.specshift.yml` dosyasi olusturur.
+Creates a sample `.specshift.yml` file.
 
-## GitHub Actions ile kullanim
+## Using it with GitHub Actions
 
-Asagidaki workflow, her pull request'te API sozlesmenizi `main` dalindaki
-halinden farkli olup olmadigini kontrol eder ve kirici bir degisiklik
-varsa build'i basarisiz kilar:
+The workflow below checks your API contract against the `main` branch on
+every pull request and fails the build if a breaking change is found:
 
 ```yaml
 name: API Contract Check
@@ -233,19 +232,19 @@ jobs:
       - run: specshift check --base-ref origin/${{ github.base_ref }}
 ```
 
-AI destekli PR yorumlari eklemek isterseniz, `specshift check --ai --format
-markdown --output report.md` ile bir Markdown raporu uretip bunu
-`peter-evans/create-or-update-comment` gibi bir action ile PR'a
-yorum olarak ekleyebilirsiniz.
+If you want to add AI-powered PR comments, you can generate a Markdown
+report with `specshift check --ai --format markdown --output report.md`
+and post it as a PR comment using an action like
+`peter-evans/create-or-update-comment`.
 
-## Yapilandirma dosyasi (`.specshift.yml`)
+## Configuration file (`.specshift.yml`)
 
 ```yaml
 spec_path: openapi.yaml
 base_ref: main
 fail_on: breaking
 
-# istege bagli
+# optional
 ai_provider: groq
 ai_model: llama-3.3-70b-versatile
 slack_webhook: https://hooks.slack.com/services/...
@@ -253,51 +252,50 @@ discord_webhook: https://discord.com/api/webhooks/...
 ignore_paths: []
 ```
 
-## SpecShift ne zaman kirici (breaking) der
+## When SpecShift calls something breaking
 
-Asagidaki tablo, en yaygin senaryolarda hangi seviyenin uygulandigini
-ozetliyor:
+The table below summarizes which severity level applies in the most
+common scenarios:
 
-| Degisiklik | Request baglaminda | Response baglaminda |
+| Change | In a request | In a response |
 |---|---|---|
-| Alan kaldirildi | Uyari | Kirici |
-| Yeni zorunlu alan eklendi | Kirici | Bilgi |
-| Yeni istege bagli alan eklendi | Bilgi | Bilgi |
-| Alan artik zorunlu degil | Bilgi | Kirici |
-| Alan artik zorunlu | Kirici | Bilgi |
-| Veri tipi degisti | Kirici | Kirici |
-| Enum degeri kaldirildi | Kirici | Kirici |
-| Endpoint veya metod kaldirildi | Kirici | Kirici |
+| Field removed | Warning | Breaking |
+| New required field added | Breaking | Info |
+| New optional field added | Info | Info |
+| Field no longer required | Info | Breaking |
+| Field became required | Breaking | Info |
+| Data type changed | Breaking | Breaking |
+| Enum value removed | Breaking | Breaking |
+| Endpoint or method removed | Breaking | Breaking |
 
-## Diger araclarla karsilastirma
+## Comparison with other tools
 
-| | SpecShift | Ham JSON/YAML diff | oasdiff / openapi-diff benzeri araclar |
+| | SpecShift | Raw JSON/YAML diff | oasdiff / openapi-diff style tools |
 |---|---|---|---|
-| Baglama duyarli siniflandirma | Evet | Hayir | Kismen |
-| Dogal dil ozeti | Evet (istege bagli) | Hayir | Hayir |
-| Ucretsiz kullanim | Tamamen ucretsiz | Ucretsiz | Genelde ucretsiz |
-| CI entegrasyonu | Yerlesik (`check`) | Manuel | Degisken |
-| Canli URL izleme | Yerlesik (`watch`) | Yok | Nadiren |
+| Context-aware classification | Yes | No | Partially |
+| Natural-language summary | Yes (optional) | No | No |
+| Free to use | Fully free | Free | Usually free |
+| CI integration | Built-in (`check`) | Manual | Varies |
+| Live URL monitoring | Built-in (`watch`) | No | Rarely |
 
-## Yol haritasi
+## Roadmap
 
-Bu proje aktif olarak gelistirilmeye devam ediyor. Planlanan bazi basliklar:
+This project is under active development. Some planned areas:
 
-- gRPC/Protobuf sozlesmeleri icin destek
-- GraphQL sema diff'i
-- GitHub PR'lara otomatik yorum eklemek icin resmi bir GitHub Action
-- Web tabanli bir sonuc goruntuleyici
-- Daha fazla semantik kural (path parametresi pattern degisiklikleri,
-  content-type degisiklikleri gibi)
+- Support for gRPC/Protobuf contracts
+- GraphQL schema diffing
+- An official GitHub Action for posting automatic PR comments
+- A web-based result viewer
+- More semantic rules (path parameter pattern changes, content-type
+  changes, etc.)
 
-Bir ozellik onerisi olursa issue acmaktan cekinmeyin.
+Feel free to open an issue if you have a feature request.
 
-## Katkida bulunma
+## Contributing
 
-Katki rehberi icin [CONTRIBUTING.md](CONTRIBUTING.md) dosyasina bakabilirsiniz.
-Hata bildirimleri, ozellik onerileri ve pull request'ler her zaman
-hos karsilanir.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide. Bug
+reports, feature requests, and pull requests are always welcome.
 
-## Lisans
+## License
 
-Bu proje [MIT lisansi](LICENSE) ile lisanslanmistir.
+This project is licensed under the [MIT License](LICENSE).

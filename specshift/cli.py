@@ -1,4 +1,4 @@
-"""SpecShift komut satiri arayuzu."""
+"""SpecShift command-line interface."""
 
 from __future__ import annotations
 
@@ -26,60 +26,60 @@ CACHE_DIR = Path(".specshift_cache")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="specshift",
-        description="OpenAPI/Swagger spesifikasyonlarindaki degisiklikleri tespit eder ve siniflandirir.",
+        description="Detects and classifies changes in OpenAPI/Swagger specifications.",
     )
     parser.add_argument("--version", action="version", version=f"specshift {__version__}")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    diff_parser = subparsers.add_parser("diff", help="Iki spesifikasyonu karsilastir")
-    diff_parser.add_argument("old", help="Eski spesifikasyon: dosya yolu veya URL")
-    diff_parser.add_argument("new", help="Yeni spesifikasyon: dosya yolu veya URL")
+    diff_parser = subparsers.add_parser("diff", help="Compare two specifications")
+    diff_parser.add_argument("old", help="Old specification: file path or URL")
+    diff_parser.add_argument("new", help="New specification: file path or URL")
     _add_common_diff_args(diff_parser)
 
     check_parser = subparsers.add_parser(
-        "check", help="CI icin: mevcut spesifikasyonu bir git referansiyla karsilastirir"
+        "check", help="For CI: compares the current specification against a git reference"
     )
-    check_parser.add_argument("--spec", help="Spesifikasyon dosyasinin yolu (config'i gecersiz kilar)")
-    check_parser.add_argument("--base-ref", help="Karsilastirilacak git referansi (config'i gecersiz kilar)")
-    check_parser.add_argument("--config", default=None, help="Yapilandirma dosyasinin yolu")
+    check_parser.add_argument("--spec", help="Path to the specification file (overrides config)")
+    check_parser.add_argument("--base-ref", help="Git reference to compare against (overrides config)")
+    check_parser.add_argument("--config", default=None, help="Path to the configuration file")
     _add_common_diff_args(check_parser)
 
     watch_parser = subparsers.add_parser(
-        "watch", help="Bir URL'yi periyodik olarak izler, degisiklik oldugunda bildirim gonderir"
+        "watch", help="Periodically watches a URL and sends a notification when it changes"
     )
-    watch_parser.add_argument("url", help="Izlenecek OpenAPI spesifikasyonu URL'si")
-    watch_parser.add_argument("--interval", type=int, default=300, help="Kontrol araligi (saniye), varsayilan 300")
-    watch_parser.add_argument("--once", action="store_true", help="Sadece bir kez kontrol et ve cik")
-    watch_parser.add_argument("--slack-webhook", help="Slack webhook URL'si")
-    watch_parser.add_argument("--discord-webhook", help="Discord webhook URL'si")
-    watch_parser.add_argument("--ai", action="store_true", help="Bildirimlere AI ozeti ekle")
+    watch_parser.add_argument("url", help="URL of the OpenAPI specification to watch")
+    watch_parser.add_argument("--interval", type=int, default=300, help="Polling interval in seconds, default 300")
+    watch_parser.add_argument("--once", action="store_true", help="Check only once and exit")
+    watch_parser.add_argument("--slack-webhook", help="Slack webhook URL")
+    watch_parser.add_argument("--discord-webhook", help="Discord webhook URL")
+    watch_parser.add_argument("--ai", action="store_true", help="Add an AI summary to notifications")
     watch_parser.add_argument("--ai-provider", choices=["groq", "gemini", "openai_compatible"], default=None)
 
-    init_parser = subparsers.add_parser("init", help="Ornek .specshift.yml yapilandirma dosyasi olusturur")
-    init_parser.add_argument("--path", default=".specshift.yml", help="Olusturulacak dosyanin yolu")
-    init_parser.add_argument("--force", action="store_true", help="Var olan dosyanin uzerine yaz")
+    init_parser = subparsers.add_parser("init", help="Creates a sample .specshift.yml configuration file")
+    init_parser.add_argument("--path", default=".specshift.yml", help="Path of the file to create")
+    init_parser.add_argument("--force", action="store_true", help="Overwrite an existing file")
 
     return parser
 
 
 def _add_common_diff_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--format", choices=["console", "markdown", "json"], default="console", help="Cikti formati"
+        "--format", choices=["console", "markdown", "json"], default="console", help="Output format"
     )
-    parser.add_argument("--output", help="Ciktiyi bir dosyaya yazar (verilmezse stdout'a yazilir)")
-    parser.add_argument("--ai", action="store_true", help="Yapay zeka ile dogal dil ozeti uret")
+    parser.add_argument("--output", help="Write the output to a file (stdout if omitted)")
+    parser.add_argument("--ai", action="store_true", help="Generate a natural-language AI summary")
     parser.add_argument(
-        "--ai-provider", choices=["groq", "gemini", "openai_compatible"], default=None, help="AI saglayicisi"
+        "--ai-provider", choices=["groq", "gemini", "openai_compatible"], default=None, help="AI provider to use"
     )
-    parser.add_argument("--ai-model", default=None, help="Kullanilacak AI model adi")
+    parser.add_argument("--ai-model", default=None, help="Name of the AI model to use")
     parser.add_argument(
         "--fail-on",
         choices=["breaking", "warning", "none"],
         default="breaking",
-        help="Hangi seviyede sifir olmayan cikis kodu donulecegini belirler",
+        help="Determines at which severity level a non-zero exit code is returned",
     )
-    parser.add_argument("--quiet", action="store_true", help="Sadece ozet satirini yazdir")
+    parser.add_argument("--quiet", action="store_true", help="Only print the summary line")
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -96,10 +96,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         if args.command == "init":
             return _run_init(args)
     except (SpecLoadError, GitError) as exc:
-        print(f"Hata: {exc}", file=sys.stderr)
+        print(f"Error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        print("\nDurduruldu.")
+        print("\nStopped.")
         return 130
 
     parser.print_help()
@@ -152,7 +152,7 @@ def _emit_result(result: DiffResult, args: argparse.Namespace) -> int:
     elif args.format == "markdown":
         output_text = render_markdown_report(result, ai_summary=ai_summary)
     else:
-        output_text = None  # console formati dogrudan yazdirilir
+        output_text = None  # console format is printed directly
 
     if args.format == "console":
         if args.output:
@@ -160,15 +160,15 @@ def _emit_result(result: DiffResult, args: argparse.Namespace) -> int:
 
             Path(args.output).write_text(render_plain_text_report(result), encoding="utf-8")
             if not args.quiet:
-                print(f"Rapor yazildi: {args.output}")
+                print(f"Report written to: {args.output}")
         else:
             print_console_report(result, verbose=not args.quiet)
             if ai_summary:
-                print(f"\nYapay Zeka Ozeti:\n{ai_summary}")
+                print(f"\nAI Summary:\n{ai_summary}")
     else:
         if args.output:
             Path(args.output).write_text(output_text, encoding="utf-8")
-            print(f"Rapor yazildi: {args.output}")
+            print(f"Report written to: {args.output}")
         else:
             print(output_text)
 
@@ -186,11 +186,11 @@ def _exit_code_for(result: DiffResult, fail_on: str) -> int:
 def _run_init(args: argparse.Namespace) -> int:
     target = Path(args.path)
     if target.exists() and not args.force:
-        print(f"'{target}' zaten mevcut. Uzerine yazmak icin --force kullanin.", file=sys.stderr)
+        print(f"'{target}' already exists. Use --force to overwrite it.", file=sys.stderr)
         return 1
 
     write_default_config(str(target))
-    print(f"Yapilandirma dosyasi olusturuldu: {target}")
+    print(f"Configuration file created: {target}")
     return 0
 
 
@@ -203,7 +203,7 @@ def _run_watch(args: argparse.Namespace) -> int:
         try:
             current_spec = load_spec(args.url)
         except SpecLoadError as exc:
-            print(f"Uyari: spesifikasyon alinamadi ({exc}), tekrar denenecek.", file=sys.stderr)
+            print(f"Warning: could not fetch specification ({exc}), will retry.", file=sys.stderr)
             if args.once:
                 return 2
             time.sleep(args.interval)
@@ -221,9 +221,9 @@ def _run_watch(args: argparse.Namespace) -> int:
 
                 _send_notifications(result, args.slack_webhook, args.discord_webhook, ai_summary)
             else:
-                print("Degisiklik bulunamadi.")
+                print("No changes found.")
         else:
-            print(f"Ilk anlik goruntu kaydedildi: {args.url}")
+            print(f"Initial snapshot saved: {args.url}")
 
         cache_file.write_text(json.dumps(current_spec), encoding="utf-8")
 
@@ -243,13 +243,13 @@ def _send_notifications(
         try:
             notify_slack(slack_webhook, result, ai_summary=ai_summary)
         except NotifyError as exc:
-            print(f"Slack bildirimi gonderilemedi: {exc}", file=sys.stderr)
+            print(f"Failed to send Slack notification: {exc}", file=sys.stderr)
 
     if discord_webhook:
         try:
             notify_discord(discord_webhook, result, ai_summary=ai_summary)
         except NotifyError as exc:
-            print(f"Discord bildirimi gonderilemedi: {exc}", file=sys.stderr)
+            print(f"Failed to send Discord notification: {exc}", file=sys.stderr)
 
 
 if __name__ == "__main__":

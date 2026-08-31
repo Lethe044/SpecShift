@@ -7,7 +7,7 @@ servers:
 paths:
   /books:
     get:
-      summary: Kitap listesini getirir
+      summary: List all books
       parameters:
         - name: category
           in: query
@@ -16,7 +16,7 @@ paths:
             type: string
       responses:
         "200":
-          description: Basarili
+          description: Success
           content:
             application/json:
               schema:
@@ -24,7 +24,7 @@ paths:
                 items:
                   $ref: "#/components/schemas/Book"
     post:
-      summary: Yeni kitap ekler
+      summary: Add a new book
       requestBody:
         required: true
         content:
@@ -33,14 +33,14 @@ paths:
               $ref: "#/components/schemas/BookInput"
       responses:
         "201":
-          description: Olusturuldu
+          description: Created
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Book"
   /books/{bookId}:
     get:
-      summary: Tek bir kitabi getirir
+      summary: Get a single book
       parameters:
         - name: bookId
           in: path
@@ -49,15 +49,15 @@ paths:
             type: string
       responses:
         "200":
-          description: Basarili
+          description: Success
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Book"
         "404":
-          description: Bulunamadi
+          description: Not found
     delete:
-      summary: Kitabi siler
+      summary: Delete a book
       parameters:
         - name: bookId
           in: path
@@ -66,7 +66,7 @@ paths:
             type: string
       responses:
         "204":
-          description: Silindi
+          description: Deleted
 components:
   schemas:
     Book:

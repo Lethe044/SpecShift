@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "specshift"
 version = "1.0.0"
-description = "OpenAPI ve Swagger sozlesmelerindeki kirici degisiklikleri tespit eden, siniflandiran ve isteğe bagli AI ile ozetleyen CLI araci"
+description = "Detects, classifies, and optionally summarizes breaking changes in OpenAPI/Swagger contracts using AI"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }

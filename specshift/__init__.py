@@ -1,6 +1,6 @@
 """
-specshift - OpenAPI ve Swagger sozlesmelerindeki degisiklikleri tespit eden,
-siniflandiran ve isteğe bagli olarak yapay zeka ile ozetleyen arac.
+specshift - a CLI tool that detects, classifies, and (optionally)
+summarizes changes in OpenAPI and Swagger contracts using AI.
 """
 
 from specshift.differ import diff_specs

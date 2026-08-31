@@ -45,7 +45,7 @@ def test_removed_path_is_breaking():
     new = base_spec(paths={})
     result = diff_specs(old, new)
     assert result.has_breaking_changes
-    assert any("kaldirilmis" in c.message for c in result.breaking_changes)
+    assert any("removed" in c.message for c in result.breaking_changes)
 
 
 def test_added_path_is_info_only():

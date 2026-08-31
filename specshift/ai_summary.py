@@ -1,10 +1,10 @@
 """
-DiffResult uzerinden dogal dilde bir ozet uretir.
+Generates a natural-language summary from a DiffResult.
 
-Bu modul tamamen istege baglidir. GROQ_API_KEY veya GEMINI_API_KEY ortam
-degiskeni tanimli degilse, hicbir aga cikmadan sablon tabanli (rule-based)
-bir ozet uretilir. Boylece proje hicbir ucretli servise bagimli olmadan
-tam calisir durumda kalir.
+This module is entirely optional. If neither GROQ_API_KEY nor GEMINI_API_KEY
+is set, a rule-based summary is produced without making any network calls.
+This keeps the project fully functional without depending on any paid
+service.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ OPENAI_COMPATIBLE_URL_ENV = "SPECSHIFT_OPENAI_BASE_URL"
 
 
 class AISummaryError(Exception):
-    """AI ozeti uretilirken bir sorun olustugunda firlatilir."""
+    """Raised when the AI summary could not be generated."""
 
 
 def generate_summary(
@@ -38,9 +38,9 @@ def generate_summary(
     timeout: int = 30,
 ) -> str:
     """
-    Mumkunse yapilandirilmis bir AI saglayicisi kullanarak, degilse sablon
-    tabanli olarak dogal dilde bir ozet dondurur. Hicbir zaman istisna
-    firlatarak calismayi durdurmaz; basarisiz olursa sablon ozete duser.
+    Returns a natural-language summary using a configured AI provider when
+    possible, otherwise falls back to a rule-based summary. Never raises an
+    exception that would halt execution; failures fall back silently.
     """
     prompt = _build_prompt(result)
 
@@ -80,15 +80,16 @@ def _detect_provider() -> Optional[str]:
 def _build_prompt(result: DiffResult) -> str:
     counts = result.summary_counts()
     lines = [
-        "Asagida bir API'nin iki surumu arasinda tespit edilen sozlesme "
-        "(contract) degisikliklerinin listesi bulunuyor. Bu listeyi okuyup "
-        "bu API'yi tuketen bir gelistiricinin anlayacagi, kisa, net ve "
-        "profesyonel bir Turkce ozet yaz. Once en onemli kirici degisiklikleri "
-        "vurgula, sonra dikkat edilmesi gerekenleri, en sonda onemsiz "
-        "eklemeleri kisaca belirt. Liste veya baslik kullanma, akici paragraflar "
-        "halinde yaz. Uydurma bilgi ekleme, sadece verilen degisikliklere dayan.",
+        "Below is a list of contract changes detected between two versions "
+        "of an API. Read this list and write a short, clear, professional "
+        "summary in English that a developer consuming this API would "
+        "understand. First highlight the most important breaking changes, "
+        "then anything worth paying attention to, and finally briefly "
+        "mention minor additions. Do not use lists or headings, write in "
+        "flowing paragraphs. Do not invent information, base the summary "
+        "only on the changes given.",
         "",
-        f"Toplam: {counts['breaking']} kirici, {counts['warning']} uyari, {counts['info']} bilgi amacli degisiklik.",
+        f"Total: {counts['breaking']} breaking, {counts['warning']} warning, {counts['info']} informational changes.",
         "",
     ]
     for change in result.sorted_changes()[:60]:
@@ -115,7 +116,7 @@ def _call_groq(prompt: str, model: str, timeout: int) -> str:
         data = response.json()
         return data["choices"][0]["message"]["content"].strip()
     except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
-        raise AISummaryError(f"Groq istegi basarisiz oldu: {exc}") from exc
+        raise AISummaryError(f"Groq request failed: {exc}") from exc
 
 
 def _call_gemini(prompt: str, model: str, timeout: int) -> str:
@@ -134,7 +135,7 @@ def _call_gemini(prompt: str, model: str, timeout: int) -> str:
         data = response.json()
         return data["candidates"][0]["content"]["parts"][0]["text"].strip()
     except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
-        raise AISummaryError(f"Gemini istegi basarisiz oldu: {exc}") from exc
+        raise AISummaryError(f"Gemini request failed: {exc}") from exc
 
 
 def _call_openai_compatible(prompt: str, model: Optional[str], timeout: int) -> str:
@@ -156,15 +157,15 @@ def _call_openai_compatible(prompt: str, model: Optional[str], timeout: int) -> 
         data = response.json()
         return data["choices"][0]["message"]["content"].strip()
     except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
-        raise AISummaryError(f"Ozel uc nokta istegi basarisiz oldu: {exc}") from exc
+        raise AISummaryError(f"Custom endpoint request failed: {exc}") from exc
 
 
 def build_template_summary(result: DiffResult) -> str:
-    """API anahtari olmadan calisan, kural tabanli, deterministik ozet."""
+    """A deterministic, rule-based summary that works without any API key."""
     counts = result.summary_counts()
 
     if result.is_empty:
-        return "Iki spesifikasyon arasinda herhangi bir fark tespit edilmedi."
+        return "No differences were detected between the two specifications."
 
     parts: list[str] = []
 
@@ -172,29 +173,29 @@ def build_template_summary(result: DiffResult) -> str:
         top_breaking = result.breaking_changes[:5]
         breaking_desc = "; ".join(f"{c.location} ({c.message.rstrip('.')})" for c in top_breaking)
         extra = counts["breaking"] - len(top_breaking)
-        extra_note = f" ve {extra} kirici degisiklik daha" if extra > 0 else ""
+        extra_note = f" and {extra} more breaking change(s)" if extra > 0 else ""
         parts.append(
-            f"Bu guncelleme {counts['breaking']} kirici degisiklik iceriyor ve mevcut API "
-            f"tuketicilerini etkileyebilir. Ozellikle: {breaking_desc}{extra_note}. "
-            "Bu API'yi kullanan istemcilerin gecis yapmadan once bu noktalari gozden gecirmesi onerilir."
+            f"This update contains {counts['breaking']} breaking change(s) and may affect "
+            f"existing API consumers. Notably: {breaking_desc}{extra_note}. "
+            "Clients using this API should review these points before migrating."
         )
     else:
         parts.append(
-            "Bu guncelleme herhangi bir kirici degisiklik icermiyor, mevcut istemciler "
-            "ek bir aksiyon almadan calismaya devam edebilir."
+            "This update does not contain any breaking changes, existing clients "
+            "can continue working without any additional action."
         )
 
     if counts["warning"] > 0:
         parts.append(
-            f"Ayrica {counts['warning']} adet dikkat edilmesi gereken degisiklik var; "
-            "bunlar dogrudan kirici olmasa da bazi kullanim senaryolarinda davranis "
-            "farkliligina yol acabilir."
+            f"There are also {counts['warning']} change(s) worth paying attention to; "
+            "these are not directly breaking but may cause behavioral differences "
+            "in some usage scenarios."
         )
 
     if counts["info"] > 0:
         parts.append(
-            f"Geriye kalan {counts['info']} degisiklik ise yeni ozellik veya iyilestirme "
-            "niteliginde olup mevcut entegrasyonlar icin risk tasimiyor."
+            f"The remaining {counts['info']} change(s) are new features or improvements "
+            "and do not pose a risk to existing integrations."
         )
 
     return " ".join(parts)

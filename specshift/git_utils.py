@@ -1,4 +1,4 @@
-"""Git revizyonlari arasinda dosya icerigi cekmek icin yardimci fonksiyonlar."""
+"""Helper functions for reading file content across git revisions."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from specshift.spec_loader import SpecLoadError, parse_spec_text
 
 
 class GitError(Exception):
-    """Git komutu basarisiz oldugunda firlatilir."""
+    """Raised when a git command fails."""
 
 
 def _run_git(args: list[str], cwd: str | None = None) -> str:
@@ -22,9 +22,9 @@ def _run_git(args: list[str], cwd: str | None = None) -> str:
             text=True,
         )
     except FileNotFoundError as exc:
-        raise GitError("git komutu bulunamadi. Git'in kurulu oldugundan emin olun.") from exc
+        raise GitError("git command not found. Make sure git is installed.") from exc
     except subprocess.CalledProcessError as exc:
-        raise GitError(f"git komutu basarisiz oldu: {exc.stderr.strip()}") from exc
+        raise GitError(f"git command failed: {exc.stderr.strip()}") from exc
 
     return result.stdout
 
@@ -39,12 +39,13 @@ def is_git_repo(path: str = ".") -> bool:
 
 def load_spec_from_git(file_path: str, ref: str, repo_path: str = ".") -> dict:
     """
-    Verilen git referansindaki (ornegin 'main', 'HEAD~1', bir tag veya commit hash)
-    dosyanin icerigini okuyup spesifikasyon olarak ayristirir.
+    Reads the content of a file at a given git reference (e.g. 'main',
+    'HEAD~1', a tag, or a commit hash) and parses it as a specification.
     """
     relative_path = Path(file_path)
     try:
-        # git repo koku disindan cagrilmis olabilir, yolu repo kokune gore normalize et
+        # The command may be invoked from outside the repo root, so
+        # normalize the path relative to the repository root.
         toplevel = _run_git(["rev-parse", "--show-toplevel"], cwd=repo_path).strip()
         repo_root = Path(toplevel)
         abs_target = (Path(repo_path).resolve() / relative_path).resolve()
@@ -57,8 +58,8 @@ def load_spec_from_git(file_path: str, ref: str, repo_path: str = ".") -> dict:
         content = _run_git(["show", f"{ref}:{git_path}"], cwd=repo_path)
     except GitError as exc:
         raise GitError(
-            f"'{ref}:{git_path}' icerigi okunamadi. Dosya yolunun ve referansin "
-            f"dogru oldugundan emin olun. Detay: {exc}"
+            f"Could not read '{ref}:{git_path}'. Make sure the file path and "
+            f"reference are correct. Details: {exc}"
         ) from exc
 
     try:

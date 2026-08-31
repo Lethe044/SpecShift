@@ -1,10 +1,10 @@
-# Katkida Bulunma Rehberi
+# Contributing Guide
 
-SpecShift'e katki gostermek istediğin icin tesekkurler. Bu belge, katki surecini
-hem senin hem de proje bakimcilari icin daha kolay hale getirmek amaciyla
-hazirlandi.
+Thank you for your interest in contributing to SpecShift. This document
+is meant to make the contribution process easier, both for you and for
+the project maintainers.
 
-## Gelistirme ortamini kurma
+## Setting up a development environment
 
 ```bash
 git clone https://github.com/Lethe044/specshift.git
@@ -14,66 +14,67 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
 
-Kurulumdan sonra CLI'nin calistigini dogrula:
+After installation, verify that the CLI works:
 
 ```bash
 specshift --version
 specshift diff examples/old_api.yaml examples/new_api.yaml
 ```
 
-## Testleri calistirma
+## Running tests
 
 ```bash
 pytest --cov=specshift --cov-report=term-missing
 ```
 
-Yeni bir ozellik veya duzeltme eklerken mutlaka ilgili testleri de ekle.
-`tests/test_differ.py` dosyasindaki mevcut testler, yeni bir kural eklerken
-izlenecek deseni gosteriyor: kucuk, odakli bir OpenAPI parcasi olustur,
-diff'i calistir ve beklenen severity/mesaji dogrula.
+When adding a new feature or fix, make sure to add corresponding tests.
+The existing tests in `tests/test_differ.py` show the pattern to follow
+when adding a new rule: build a small, focused OpenAPI snippet, run the
+diff, and assert the expected severity and message.
 
-## Kod stili
+## Code style
 
-- Python 3.9+ uyumlulugu korunmali.
-- Fonksiyon ve degiskenler icin aciklayici isimler kullan.
-- Yeni public fonksiyonlara docstring ekle.
-- Mumkun oldugunca type hint kullan.
-- Buyuk fonksiyonlari kucuk, test edilebilir parcalara bol.
+- Maintain Python 3.9+ compatibility.
+- Use descriptive names for functions and variables.
+- Add docstrings to new public functions.
+- Use type hints wherever practical.
+- Break large functions into small, testable pieces.
 
-## Yeni bir diff kurali eklemek
+## Adding a new diff rule
 
-Diff motorunun cogu, `specshift/differ.py` icindeki kucuk, tek sorumluluklu
-fonksiyonlardan olusuyor. Yeni bir kural eklerken:
+Most of the diff engine consists of small, single-responsibility functions
+inside `specshift/differ.py`. When adding a new rule:
 
-1. Degisikligin hangi baglamda (request mi response mu) farkli agirlik
-   tasidigini dusun. Ayni degisiklik request'te zararsizken response'ta
-   kirici olabilir, ya da tam tersi.
-2. `Severity.BREAKING`, `Severity.WARNING` veya `Severity.INFO` seviyelerinden
-   en uygununu sec ve gerekcesini fonksiyon veya commit mesajinda kisaca acikla.
-3. Hem pozitif hem negatif test senaryosu ekle (kural tetiklenmeli VE
-   tetiklenmemesi gereken durumda tetiklenmemeli).
+1. Think about whether the change carries different weight depending on
+   context (request vs. response). The same change can be harmless in a
+   request but breaking in a response, or vice versa.
+2. Pick the most appropriate severity level: `Severity.BREAKING`,
+   `Severity.WARNING`, or `Severity.INFO`, and briefly explain your
+   reasoning in the function or the commit message.
+3. Add both a positive and a negative test case (the rule should trigger
+   when it's supposed to, and should NOT trigger when it isn't).
 
-## Hata bildirme
+## Reporting bugs
 
-Bir hata bulduysan, lutfen su bilgileri iceren bir issue ac:
+If you find a bug, please open an issue including:
 
-- Kullandigin specshift surumu (`specshift --version`)
-- Sorunu tetikleyen minimal bir OpenAPI ornegi (mumkunse)
-- Beklenen davranis ve gozlemlenen davranis
+- The specshift version you're using (`specshift --version`)
+- A minimal OpenAPI example that triggers the issue (if possible)
+- The expected behavior versus the observed behavior
 
-## Pull request surumu
+## Pull request process
 
-1. Repository'yi fork'la ve degisikliklerin icin yeni bir dal ac.
-2. Degisikligini test kapsamiyla birlikte yap.
-3. `pytest` calistirip tum testlerin gectiginden emin ol.
-4. PR aciklamasinda ne degistigini ve neden gerekli oldugunu kisaca anlat.
-5. CI yesile donene kadar geri bildirimlere yanit ver.
+1. Fork the repository and create a new branch for your change.
+2. Make your change along with test coverage.
+3. Run `pytest` and make sure all tests pass.
+4. Briefly describe what changed and why in the PR description.
+5. Respond to feedback until CI turns green.
 
-Kucuk duzeltmeler (yazim hatasi, dokumantasyon iyilestirmesi) icin de
-PR acmaktan cekinme, her katki degerlidir.
+Small fixes (typos, documentation improvements) are welcome too, don't
+hesitate to open a PR for those as well, every contribution matters.
 
-## Davranis kurallari
+## Code of conduct
 
-Bu projede herkese saygili ve yapici bir iletisim bekleniyor. Yapici
-elestiri her zaman hos karsilanir, kisisel elestiriler ve saygisiz dil
-kabul edilmez.
+This project expects respectful and constructive communication from
+everyone involved. Constructive criticism is always welcome; personal
+attacks and disrespectful language are not.
