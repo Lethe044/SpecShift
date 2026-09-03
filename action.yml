@@ -1,0 +1,168 @@
+name: "SpecShift Contract Check"
+description: "Detects breaking changes in an OpenAPI/Swagger contract and posts a report as a pull request comment."
+author: "Lethe044"
+
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  spec-path:
+    description: "Path to the OpenAPI/Swagger specification file."
+    required: false
+    default: "openapi.yaml"
+  base-ref:
+    description: "Git reference to compare against. Defaults to the pull request's base branch."
+    required: false
+    default: ""
+  fail-on:
+    description: "Severity level that fails the workflow: breaking, warning, or none."
+    required: false
+    default: "breaking"
+  ai-summary:
+    description: "Whether to generate a natural-language AI summary (requires GROQ_API_KEY or GEMINI_API_KEY to be set)."
+    required: false
+    default: "false"
+  ai-provider:
+    description: "AI provider to use: groq, gemini, or openai_compatible. Auto-detected from available keys if omitted."
+    required: false
+    default: ""
+  comment-on-pr:
+    description: "Whether to post (and keep updated) the report as a pull request comment."
+    required: false
+    default: "true"
+  github-token:
+    description: "Token used to read and post the pull request comment."
+    required: false
+    default: "${{ github.token }}"
+  specshift-version:
+    description: "Pin a specific specshift version (e.g. '1.2.0'). Defaults to the latest release on PyPI."
+    required: false
+    default: ""
+
+outputs:
+  has-breaking-changes:
+    description: "'true' if at least one breaking change was detected."
+    value: ${{ steps.diff.outputs.has_breaking_changes }}
+  breaking-count:
+    description: "Number of breaking changes detected."
+    value: ${{ steps.diff.outputs.breaking_count }}
+  warning-count:
+    description: "Number of warning-level changes detected."
+    value: ${{ steps.diff.outputs.warning_count }}
+  info-count:
+    description: "Number of informational changes detected."
+    value: ${{ steps.diff.outputs.info_count }}
+  report-path:
+    description: "Path to the generated Markdown report."
+    value: "specshift-report.md"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install specshift
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.specshift-version }}" ]; then
+          pip install "specshift==${{ inputs.specshift-version }}"
+        else
+          pip install specshift
+        fi
+
+    - name: Resolve base ref
+      id: base_ref
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.base-ref }}" ]; then
+          echo "ref=${{ inputs.base-ref }}" >> "$GITHUB_OUTPUT"
+        elif [ -n "${{ github.event.pull_request.base.ref }}" ]; then
+          echo "ref=origin/${{ github.event.pull_request.base.ref }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "ref=HEAD~1" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Generate report
+      id: diff
+      shell: bash
+      run: |
+        set -e
+
+        AI_ARGS=()
+        if [ "${{ inputs.ai-summary }}" = "true" ]; then
+          AI_ARGS+=(--ai)
+        fi
+        if [ -n "${{ inputs.ai-provider }}" ]; then
+          AI_ARGS+=(--ai-provider "${{ inputs.ai-provider }}")
+        fi
+
+        specshift check \
+          --spec "${{ inputs.spec-path }}" \
+          --base-ref "${{ steps.base_ref.outputs.ref }}" \
+          --format markdown \
+          --output specshift-report.md \
+          --fail-on none \
+          "${AI_ARGS[@]}"
+
+        specshift check \
+          --spec "${{ inputs.spec-path }}" \
+          --base-ref "${{ steps.base_ref.outputs.ref }}" \
+          --format json \
+          --output specshift-report.json \
+          --fail-on none
+
+        python3 "${{ github.action_path }}/.github/scripts/parse_summary.py" specshift-report.json
+
+    - name: Comment on pull request
+      if: ${{ inputs.comment-on-pr == 'true' && github.event_name == 'pull_request' }}
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const fs = require('fs');
+          const reportPath = 'specshift-report.md';
+          if (!fs.existsSync(reportPath)) {
+            return;
+          }
+
+          const body = fs.readFileSync(reportPath, 'utf8');
+          const marker = '<!-- specshift-report -->';
+          const commentBody = `${marker}\n${body}`;
+
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const existing = comments.find((comment) => comment.body && comment.body.includes(marker));
+
+          if (existing) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existing.id,
+              body: commentBody,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: commentBody,
+            });
+          }
+
+    - name: Enforce fail-on threshold
+      shell: bash
+      run: |
+        specshift check \
+          --spec "${{ inputs.spec-path }}" \
+          --base-ref "${{ steps.base_ref.outputs.ref }}" \
+          --format console \
+          --fail-on "${{ inputs.fail-on }}" \
+          --quiet

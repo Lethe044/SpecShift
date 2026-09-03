@@ -2,6 +2,31 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-09-03
+
+### Added
+- GraphQL SDL schema diffing via the new `specshift diff-graphql` command,
+  using a lightweight, dependency-free SDL parser. Detects removed/added
+  types, fields, arguments, and enum values, type and nullability changes,
+  interface and union membership changes, and `@deprecated` markers, all
+  classified with the same context-aware breaking/warning/info rules used
+  for OpenAPI (input types behave like requests, object types behave like
+  responses).
+- New `--format html` output producing a standalone, self-contained HTML
+  report with severity filtering and a search box, usable as a downloadable
+  CI artifact or a shareable file with no server required.
+- An official composite GitHub Action (`action.yml` at the repository root)
+  that runs a contract check, posts (and keeps updated) a Markdown report
+  as a pull request comment, and fails the workflow based on a configurable
+  severity threshold. Usable as `Lethe044/SpecShift@v1` from any repository.
+- Additional OpenAPI diff rules: content-type additions/removals,
+  `additionalProperties` tightening, `readOnly`/`writeOnly` flag changes,
+  numeric and string constraint tightening (`minimum`, `maximum`,
+  `minLength`, `maxLength`, `pattern`, and friends), default value changes,
+  and `oneOf`/`anyOf` variant count changes.
+- New example GraphQL schemas (`examples/old_schema.graphql`,
+  `examples/new_schema.graphql`) demonstrating the new command.
+
 ## [1.0.0] - 2026-08-31
 
 ### Added

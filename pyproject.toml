@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "specshift"
-version = "1.0.0"
-description = "Detects, classifies, and optionally summarizes breaking changes in OpenAPI/Swagger contracts using AI"
+version = "1.1.0"
+description = "Detects, classifies, and optionally summarizes breaking changes in OpenAPI/Swagger and GraphQL contracts using AI"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -13,6 +13,7 @@ authors = [{ name = "Lethe044" }]
 keywords = [
     "openapi",
     "swagger",
+    "graphql",
     "api",
     "breaking-changes",
     "contract-testing",
@@ -20,6 +21,7 @@ keywords = [
     "devtools",
     "cli",
     "ci-cd",
+    "github-actions",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

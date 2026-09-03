@@ -15,9 +15,15 @@ from specshift.ai_summary import generate_summary
 from specshift.config import SpecShiftConfig, write_default_config
 from specshift.differ import diff_specs
 from specshift.git_utils import GitError, load_spec_from_git
+from specshift.graphql_differ import GraphQLLoadError, diff_graphql, load_sdl
 from specshift.models import DiffResult
 from specshift.notifier import NotifyError, notify_discord, notify_slack
-from specshift.reporter import print_console_report, render_json_report, render_markdown_report
+from specshift.reporter import (
+    print_console_report,
+    render_html_report,
+    render_json_report,
+    render_markdown_report,
+)
 from specshift.spec_loader import SpecLoadError, load_spec
 
 CACHE_DIR = Path(".specshift_cache")
@@ -26,16 +32,21 @@ CACHE_DIR = Path(".specshift_cache")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="specshift",
-        description="Detects and classifies changes in OpenAPI/Swagger specifications.",
+        description="Detects and classifies changes in OpenAPI/Swagger and GraphQL contracts.",
     )
     parser.add_argument("--version", action="version", version=f"specshift {__version__}")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    diff_parser = subparsers.add_parser("diff", help="Compare two specifications")
+    diff_parser = subparsers.add_parser("diff", help="Compare two OpenAPI/Swagger specifications")
     diff_parser.add_argument("old", help="Old specification: file path or URL")
     diff_parser.add_argument("new", help="New specification: file path or URL")
     _add_common_diff_args(diff_parser)
+
+    graphql_parser = subparsers.add_parser("diff-graphql", help="Compare two GraphQL SDL schemas")
+    graphql_parser.add_argument("old", help="Old GraphQL schema: file path or URL")
+    graphql_parser.add_argument("new", help="New GraphQL schema: file path or URL")
+    _add_common_diff_args(graphql_parser)
 
     check_parser = subparsers.add_parser(
         "check", help="For CI: compares the current specification against a git reference"
@@ -65,7 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _add_common_diff_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--format", choices=["console", "markdown", "json"], default="console", help="Output format"
+        "--format", choices=["console", "markdown", "json", "html"], default="console", help="Output format"
     )
     parser.add_argument("--output", help="Write the output to a file (stdout if omitted)")
     parser.add_argument("--ai", action="store_true", help="Generate a natural-language AI summary")
@@ -89,13 +100,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     try:
         if args.command == "diff":
             return _run_diff(args)
+        if args.command == "diff-graphql":
+            return _run_diff_graphql(args)
         if args.command == "check":
             return _run_check(args)
         if args.command == "watch":
             return _run_watch(args)
         if args.command == "init":
             return _run_init(args)
-    except (SpecLoadError, GitError) as exc:
+    except (SpecLoadError, GitError, GraphQLLoadError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
@@ -110,6 +123,13 @@ def _run_diff(args: argparse.Namespace) -> int:
     old_spec = load_spec(args.old)
     new_spec = load_spec(args.new)
     result = diff_specs(old_spec, new_spec)
+    return _emit_result(result, args)
+
+
+def _run_diff_graphql(args: argparse.Namespace) -> int:
+    old_sdl = load_sdl(args.old)
+    new_sdl = load_sdl(args.new)
+    result = diff_graphql(old_sdl, new_sdl)
     return _emit_result(result, args)
 
 
@@ -151,6 +171,8 @@ def _emit_result(result: DiffResult, args: argparse.Namespace) -> int:
         output_text = render_json_report(result, ai_summary=ai_summary)
     elif args.format == "markdown":
         output_text = render_markdown_report(result, ai_summary=ai_summary)
+    elif args.format == "html":
+        output_text = render_html_report(result, ai_summary=ai_summary)
     else:
         output_text = None  # console format is printed directly
 
@@ -166,9 +188,12 @@ def _emit_result(result: DiffResult, args: argparse.Namespace) -> int:
             if ai_summary:
                 print(f"\nAI Summary:\n{ai_summary}")
     else:
-        if args.output:
-            Path(args.output).write_text(output_text, encoding="utf-8")
-            print(f"Report written to: {args.output}")
+        output_path = args.output
+        if args.format == "html" and not output_path:
+            output_path = "specshift-report.html"
+        if output_path:
+            Path(output_path).write_text(output_text, encoding="utf-8")
+            print(f"Report written to: {output_path}")
         else:
             print(output_text)
 

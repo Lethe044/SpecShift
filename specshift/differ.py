@@ -319,6 +319,42 @@ def _get_json_schema(content: dict, root_spec: dict) -> Optional[dict]:
     return resolve_schema(schema, root_spec)
 
 
+def _diff_content_types(loc: str, old_content: dict, new_content: dict, context: str, result: DiffResult) -> None:
+    old_types = set((old_content or {}).keys())
+    new_types = set((new_content or {}).keys())
+
+    if not old_types and not new_types:
+        return
+
+    removed = old_types - new_types
+    added = new_types - old_types
+
+    # Removing the only content type consumers were relying on is breaking.
+    # Removing one content type while others remain is a softer warning.
+    for media_type in removed:
+        severity = Severity.BREAKING if len(new_types) == 0 or media_type == "application/json" else Severity.WARNING
+        result.add(
+            Change(
+                severity=severity,
+                change_type=ChangeType.REMOVED,
+                location=loc,
+                message=f"Content type '{media_type}' is no longer offered.",
+                category="content_type",
+            )
+        )
+
+    for media_type in added:
+        result.add(
+            Change(
+                severity=Severity.INFO,
+                change_type=ChangeType.ADDED,
+                location=loc,
+                message=f"New content type offered: '{media_type}'.",
+                category="content_type",
+            )
+        )
+
+
 def _diff_request_body(
     loc: str, old_op: dict, new_op: dict, old_spec: dict, new_spec: dict, result: DiffResult
 ) -> None:
@@ -366,6 +402,8 @@ def _diff_request_body(
                 category="request_body",
             )
         )
+
+    _diff_content_types(loc, old_body.get("content", {}), new_body.get("content", {}), "request", result)
 
     old_schema = _get_json_schema(old_body.get("content", {}), old_spec)
     new_schema = _get_json_schema(new_body.get("content", {}), new_spec)
@@ -415,6 +453,14 @@ def _diff_responses(
 
     for status in set(old_responses) & set(new_responses):
         resp_loc = f"{loc} > response {status}"
+        _diff_content_types(
+            resp_loc,
+            old_responses[status].get("content", {}),
+            new_responses[status].get("content", {}),
+            "response",
+            result,
+        )
+
         old_schema = _get_json_schema(old_responses[status].get("content", {}), old_spec)
         new_schema = _get_json_schema(new_responses[status].get("content", {}), new_spec)
 
@@ -479,6 +525,11 @@ def _diff_schema(
     _diff_schema_type(old_schema, new_schema, loc, result)
     _diff_schema_enum(old_schema, new_schema, loc, result)
     _diff_schema_nullable(old_schema, new_schema, loc, context, result)
+    _diff_schema_additional_properties(old_schema, new_schema, loc, context, result)
+    _diff_schema_read_write_only(old_schema, new_schema, loc, context, result)
+    _diff_schema_constraints(old_schema, new_schema, loc, result)
+    _diff_schema_default(old_schema, new_schema, loc, result)
+    _diff_schema_composition(old_schema, new_schema, loc, old_spec, new_spec, context, result)
 
     old_type = old_schema.get("type")
     new_type = new_schema.get("type")
@@ -719,3 +770,235 @@ def _diff_schema_nullable(
                 category="schema",
             )
         )
+
+
+def _diff_schema_additional_properties(
+    old_schema: dict, new_schema: dict, loc: str, context: str, result: DiffResult
+) -> None:
+    if old_schema.get("type") not in (None, "object") or new_schema.get("type") not in (None, "object"):
+        return
+
+    old_value = old_schema.get("additionalProperties", True)
+    new_value = new_schema.get("additionalProperties", True)
+
+    old_permissive = old_value is not False
+    new_permissive = new_value is not False
+
+    if old_permissive and not new_permissive:
+        severity = Severity.BREAKING if context == "request" else Severity.INFO
+        result.add(
+            Change(
+                severity=severity,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message="Additional (undeclared) properties are no longer allowed.",
+                category="schema",
+            )
+        )
+    elif not old_permissive and new_permissive:
+        result.add(
+            Change(
+                severity=Severity.INFO,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message="Additional (undeclared) properties are now allowed.",
+                category="schema",
+            )
+        )
+
+
+def _diff_schema_read_write_only(
+    old_schema: dict, new_schema: dict, loc: str, context: str, result: DiffResult
+) -> None:
+    for flag, label in (("readOnly", "read-only"), ("writeOnly", "write-only")):
+        old_flag = bool(old_schema.get(flag, False))
+        new_flag = bool(new_schema.get(flag, False))
+        if old_flag == new_flag:
+            continue
+
+        if not old_flag and new_flag:
+            if flag == "readOnly" and context == "request":
+                severity = Severity.WARNING
+                message = "Field is now read-only, values sent by clients in requests will be ignored."
+            elif flag == "writeOnly" and context == "response":
+                severity = Severity.BREAKING
+                message = "Field is now write-only and will no longer appear in responses."
+            else:
+                severity = Severity.INFO
+                message = f"Field is now marked as {label}."
+            result.add(
+                Change(
+                    severity=severity,
+                    change_type=ChangeType.MODIFIED,
+                    location=loc,
+                    message=message,
+                    category="schema",
+                )
+            )
+        else:
+            result.add(
+                Change(
+                    severity=Severity.INFO,
+                    change_type=ChangeType.MODIFIED,
+                    location=loc,
+                    message=f"Field is no longer marked as {label}.",
+                    category="schema",
+                )
+            )
+
+
+_NUMERIC_TIGHTENING_RULES = (
+    # (keyword, "increase_is_stricter")
+    ("minimum", True),
+    ("exclusiveMinimum", True),
+    ("minLength", True),
+    ("minItems", True),
+    ("maximum", False),
+    ("exclusiveMaximum", False),
+    ("maxLength", False),
+    ("maxItems", False),
+)
+
+
+def _diff_schema_constraints(old_schema: dict, new_schema: dict, loc: str, result: DiffResult) -> None:
+    for keyword, increase_is_stricter in _NUMERIC_TIGHTENING_RULES:
+        old_value = old_schema.get(keyword)
+        new_value = new_schema.get(keyword)
+        if old_value is None or new_value is None or old_value == new_value:
+            continue
+        if not isinstance(old_value, (int, float)) or not isinstance(new_value, (int, float)):
+            continue
+
+        became_stricter = (new_value > old_value) if increase_is_stricter else (new_value < old_value)
+        result.add(
+            Change(
+                severity=Severity.BREAKING if became_stricter else Severity.INFO,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message=(
+                    f"Constraint '{keyword}' changed from {old_value} to {new_value} "
+                    f"({'stricter' if became_stricter else 'relaxed'}), previously valid values may now be rejected."
+                    if became_stricter
+                    else f"Constraint '{keyword}' changed from {old_value} to {new_value} (relaxed)."
+                ),
+                old_value=old_value,
+                new_value=new_value,
+                category="schema",
+            )
+        )
+
+    old_pattern = old_schema.get("pattern")
+    new_pattern = new_schema.get("pattern")
+    if old_pattern and new_pattern and old_pattern != new_pattern:
+        result.add(
+            Change(
+                severity=Severity.BREAKING,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message=f"Validation pattern changed from '{old_pattern}' to '{new_pattern}'.",
+                old_value=old_pattern,
+                new_value=new_pattern,
+                category="schema",
+            )
+        )
+    elif old_pattern and not new_pattern:
+        result.add(
+            Change(
+                severity=Severity.INFO,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message="Validation pattern constraint has been removed.",
+                category="schema",
+            )
+        )
+    elif not old_pattern and new_pattern:
+        result.add(
+            Change(
+                severity=Severity.BREAKING,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message=f"A new validation pattern has been added: '{new_pattern}'.",
+                new_value=new_pattern,
+                category="schema",
+            )
+        )
+
+
+def _diff_schema_default(old_schema: dict, new_schema: dict, loc: str, result: DiffResult) -> None:
+    has_old_default = "default" in old_schema
+    has_new_default = "default" in new_schema
+    old_default = old_schema.get("default")
+    new_default = new_schema.get("default")
+
+    if has_old_default and has_new_default and old_default != new_default:
+        result.add(
+            Change(
+                severity=Severity.WARNING,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message=f"Default value changed from {old_default!r} to {new_default!r}.",
+                old_value=old_default,
+                new_value=new_default,
+                category="schema",
+            )
+        )
+    elif has_old_default and not has_new_default:
+        result.add(
+            Change(
+                severity=Severity.WARNING,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message=f"Default value {old_default!r} has been removed.",
+                category="schema",
+            )
+        )
+    elif not has_old_default and has_new_default:
+        result.add(
+            Change(
+                severity=Severity.INFO,
+                change_type=ChangeType.MODIFIED,
+                location=loc,
+                message=f"A default value has been added: {new_default!r}.",
+                category="schema",
+            )
+        )
+
+
+def _diff_schema_composition(
+    old_schema: dict, new_schema: dict, loc: str, old_spec: dict, new_spec: dict, context: str, result: DiffResult
+) -> None:
+    for keyword in ("oneOf", "anyOf"):
+        old_variants = old_schema.get(keyword)
+        new_variants = new_schema.get(keyword)
+        if old_variants is None and new_variants is None:
+            continue
+
+        old_count = len(old_variants) if isinstance(old_variants, list) else 0
+        new_count = len(new_variants) if isinstance(new_variants, list) else 0
+
+        if new_count < old_count:
+            # A previously accepted request shape is no longer valid; a previously
+            # possible response shape simply stops occurring (usually harmless).
+            severity = Severity.BREAKING if context == "request" else Severity.INFO
+            result.add(
+                Change(
+                    severity=severity,
+                    change_type=ChangeType.MODIFIED,
+                    location=loc,
+                    message=f"A variant has been removed from '{keyword}' ({old_count} -> {new_count} options).",
+                    category="schema",
+                )
+            )
+        elif new_count > old_count:
+            # A new accepted request shape is harmless; a new possible response shape
+            # may require consumers to handle a case they did not expect before.
+            severity = Severity.WARNING if context == "response" else Severity.INFO
+            result.add(
+                Change(
+                    severity=severity,
+                    change_type=ChangeType.MODIFIED,
+                    location=loc,
+                    message=f"A variant has been added to '{keyword}' ({old_count} -> {new_count} options).",
+                    category="schema",
+                )
+            )

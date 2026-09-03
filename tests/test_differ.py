@@ -223,3 +223,148 @@ def test_example_specs_produce_expected_breaking_count():
     counts = result.summary_counts()
     assert counts["breaking"] >= 5
     assert counts["info"] >= 1
+
+
+def _response_spec(schema_extra: dict) -> dict:
+    return {
+        "info": {"title": "T", "version": "1.0"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "content": {
+                                "application/json": {
+                                    "schema": {"type": "object", "properties": {}, **schema_extra}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+
+def test_additional_properties_tightened_in_request_is_breaking():
+    old = {
+        "info": {"title": "T", "version": "1.0"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": {"type": "object", "properties": {}}}},
+                    },
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    new = {
+        "info": {"title": "T", "version": "1.1"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"type": "object", "properties": {}, "additionalProperties": False}
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    result = diff_specs(old, new)
+    assert result.has_breaking_changes
+
+
+def test_minimum_increase_is_breaking():
+    old = _response_spec({"properties": {"count": {"type": "integer", "minimum": 0}}})
+    new = _response_spec({"properties": {"count": {"type": "integer", "minimum": 10}}})
+    result = diff_specs(old, new)
+    assert result.has_breaking_changes
+
+
+def test_maximum_increase_is_not_breaking():
+    old = _response_spec({"properties": {"count": {"type": "integer", "maximum": 10}}})
+    new = _response_spec({"properties": {"count": {"type": "integer", "maximum": 100}}})
+    result = diff_specs(old, new)
+    assert not result.has_breaking_changes
+
+
+def test_pattern_added_is_breaking():
+    old = _response_spec({"properties": {"code": {"type": "string"}}})
+    new = _response_spec({"properties": {"code": {"type": "string", "pattern": "^[A-Z]{3}$"}}})
+    result = diff_specs(old, new)
+    assert result.has_breaking_changes
+
+
+def test_content_type_removed_is_breaking():
+    old = _response_spec({})
+    old["paths"]["/items"]["get"]["responses"]["200"]["content"] = {
+        "application/json": {"schema": {"type": "object", "properties": {}}}
+    }
+    new = _response_spec({})
+    new["paths"]["/items"]["get"]["responses"]["200"]["content"] = {
+        "application/xml": {"schema": {"type": "object", "properties": {}}}
+    }
+    result = diff_specs(old, new)
+    assert result.has_breaking_changes
+
+
+def test_secondary_content_type_removed_is_warning_only():
+    old = _response_spec({})
+    old["paths"]["/items"]["get"]["responses"]["200"]["content"]["text/csv"] = {"schema": {"type": "string"}}
+    new = _response_spec({})
+    result = diff_specs(old, new)
+    assert not result.has_breaking_changes
+    assert any(c.category == "content_type" for c in result.warnings)
+
+
+def test_writeonly_field_in_response_is_breaking():
+    old = _response_spec({"properties": {"secret": {"type": "string"}}})
+    new = _response_spec({"properties": {"secret": {"type": "string", "writeOnly": True}}})
+    result = diff_specs(old, new)
+    assert result.has_breaking_changes
+
+
+def test_oneof_variant_removed_in_request_is_breaking():
+    old = {
+        "info": {"title": "T", "version": "1.0"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"oneOf": [{"type": "string"}, {"type": "integer"}]}
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    new = {
+        "info": {"title": "T", "version": "1.1"},
+        "paths": {
+            "/items": {
+                "post": {
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": {"oneOf": [{"type": "string"}]}}},
+                    },
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    result = diff_specs(old, new)
+    assert result.has_breaking_changes

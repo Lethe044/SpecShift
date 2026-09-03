@@ -54,11 +54,17 @@ requirement.
 
 - **Comprehensive structural diff**: deep comparison at the path, HTTP
   method, parameter, request body, response, and schema level.
+- **GraphQL support**: diff GraphQL SDL schemas with `specshift diff-graphql`,
+  covering types, fields, arguments, enum values, interfaces, unions, and
+  deprecations, no external GraphQL library required.
 - **Context-aware classification**: the same change is weighted
-  differently depending on whether it occurs in a request or a response.
+  differently depending on whether it occurs in a request or a response
+  (or, for GraphQL, an input type versus an object type).
 - **`$ref` resolution and `allOf` merging**: correctly follows the
   reference and composition patterns common in real-world specifications.
-- **Detects enum, format, nullable, and security scheme changes**.
+- **Detects enum, format, nullable, security scheme, content-type,
+  `additionalProperties`, `readOnly`/`writeOnly`, validation constraint,
+  default value, and `oneOf`/`anyOf` changes**.
 - **Works entirely for free**: no API key or paid service is required.
 - **Optional AI summary**: can generate a natural-language summary using
   Groq, the Gemini free tier, or any OpenAI-compatible endpoint. If no key
@@ -66,12 +72,14 @@ requirement.
   stops working.
 - **CI/CD integration**: the `specshift check` command compares the
   current specification against a branch and fails the build if a
-  breaking change is found.
+  breaking change is found. An official GitHub Action is also available
+  for one-line setup with automatic PR comments (see below).
 - **Live monitoring**: the `specshift watch` command periodically checks
   a remote API's specification and sends a Slack or Discord notification
   when it changes.
-- **Three output formats**: a colored console table, a Markdown report
-  (ideal for PR comments), and JSON (for integrating with other tools).
+- **Four output formats**: a colored console table, a Markdown report
+  (ideal for PR comments), JSON (for integrating with other tools), and a
+  standalone, filterable HTML report you can open in any browser.
 
 ## Installation
 
@@ -171,12 +179,22 @@ Useful options:
 
 | Option | Description |
 |---|---|
-| `--format console\|markdown\|json` | Output format (default: console) |
+| `--format console\|markdown\|json\|html` | Output format (default: console) |
 | `--output <file>` | Writes the output to a file |
 | `--ai` | Adds a natural-language summary |
 | `--ai-provider groq\|gemini\|openai_compatible` | Chooses the AI provider |
 | `--fail-on breaking\|warning\|none` | Determines at which level exit code 1 is returned |
 | `--quiet` | Only prints the summary line |
+
+### `specshift diff-graphql <old> <new>`
+
+Compares two GraphQL SDL schemas. `<old>` and `<new>` can be a file path,
+an http(s) URL, or raw SDL text. Supports the same `--format`, `--output`,
+`--ai`, and `--fail-on` options as `diff`.
+
+```bash
+specshift diff-graphql old_schema.graphql new_schema.graphql
+```
 
 ### `specshift check`
 
@@ -204,8 +222,48 @@ Creates a sample `.specshift.yml` file.
 
 ## Using it with GitHub Actions
 
-The workflow below checks your API contract against the `main` branch on
-every pull request and fails the build if a breaking change is found:
+### Option 1: the official SpecShift action (recommended)
+
+SpecShift ships its own composite GitHub Action that runs the contract
+check and automatically posts (and keeps updated) a Markdown report as a
+pull request comment:
+
+```yaml
+name: API Contract Check
+
+on:
+  pull_request:
+    paths:
+      - "openapi.yaml"
+
+permissions:
+  pull-requests: write
+
+jobs:
+  contract-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: Lethe044/SpecShift@v1
+        with:
+          spec-path: openapi.yaml
+          fail-on: breaking
+          # optional: ai-summary: 'true'
+```
+
+Available inputs: `spec-path`, `base-ref` (defaults to the PR base branch),
+`fail-on` (`breaking` | `warning` | `none`), `ai-summary` (`true`/`false`),
+`ai-provider`, `comment-on-pr` (`true`/`false`), `github-token`, and
+`specshift-version` to pin a specific release. Outputs: `has-breaking-changes`,
+`breaking-count`, `warning-count`, `info-count`, and `report-path`.
+
+### Option 2: calling the CLI directly
+
+If you'd rather not use the action (or want to combine it with other
+tooling), the CLI works just as well on its own:
 
 ```yaml
 name: API Contract Check
@@ -268,14 +326,19 @@ common scenarios:
 | Enum value removed | Breaking | Breaking |
 | Endpoint or method removed | Breaking | Breaking |
 
+The same table applies to GraphQL: `input` types behave like requests,
+`type`/`interface` fields behave like responses.
+
 ## Comparison with other tools
 
 | | SpecShift | Raw JSON/YAML diff | oasdiff / openapi-diff style tools |
 |---|---|---|---|
 | Context-aware classification | Yes | No | Partially |
+| GraphQL support | Yes | No | Rarely |
 | Natural-language summary | Yes (optional) | No | No |
+| Standalone HTML report | Yes | No | Rarely |
 | Free to use | Fully free | Free | Usually free |
-| CI integration | Built-in (`check`) | Manual | Varies |
+| CI integration | Built-in (`check` + official Action) | Manual | Varies |
 | Live URL monitoring | Built-in (`watch`) | No | Rarely |
 
 ## Roadmap
@@ -283,11 +346,10 @@ common scenarios:
 This project is under active development. Some planned areas:
 
 - Support for gRPC/Protobuf contracts
-- GraphQL schema diffing
-- An official GitHub Action for posting automatic PR comments
-- A web-based result viewer
-- More semantic rules (path parameter pattern changes, content-type
-  changes, etc.)
+- Path parameter pattern (regex) and discriminator-level rule refinements
+- A hosted, shareable web viewer (beyond the offline HTML report)
+- Deeper GraphQL support: directive-aware deprecation reasons, custom
+  scalar compatibility hints, and federation-aware schema composition
 
 Feel free to open an issue if you have a feature request.
 

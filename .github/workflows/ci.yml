@@ -32,6 +32,8 @@ jobs:
         run: |
           specshift --version
           specshift diff examples/old_api.yaml examples/new_api.yaml --format json --fail-on none
+          specshift diff-graphql examples/old_schema.graphql examples/new_schema.graphql --format json --fail-on none
+          specshift diff examples/old_api.yaml examples/new_api.yaml --format html --output /tmp/report.html --fail-on none
 
   self-check:
     runs-on: ubuntu-latest
