@@ -85,9 +85,14 @@ requirement.
   for comparing specs interactively (drag in files or paste text), with
   zero extra dependencies since it runs entirely on Python's standard
   library and stays on localhost.
-- **Four output formats**: a colored console table, a Markdown report
-  (ideal for PR comments), JSON (for integrating with other tools), and a
-  standalone, filterable HTML report you can open in any browser.
+- **Auto-generated changelog**: `specshift changelog` walks your spec
+  file's history across git tags and produces a single Markdown document
+  summarizing what changed (and whether it was breaking) between every
+  release, plus an "Unreleased" section for the current working tree.
+- **Five output formats**: a colored console table, a Markdown report
+  (ideal for PR comments), JSON (for integrating with other tools), a
+  standalone filterable HTML report, and SARIF 2.1.0 for GitHub Code
+  Scanning.
 
 ## Installation
 
@@ -187,7 +192,7 @@ Useful options:
 
 | Option | Description |
 |---|---|
-| `--format console\|markdown\|json\|html` | Output format (default: console) |
+| `--format console\|markdown\|json\|html\|sarif` | Output format (default: console) |
 | `--output <file>` | Writes the output to a file |
 | `--ai` | Adds a natural-language summary |
 | `--ai-provider groq\|gemini\|openai_compatible` | Chooses the AI provider |
@@ -251,6 +256,21 @@ specshift watch https://api.example.com/openapi.json \
   --slack-webhook "$SLACK_WEBHOOK_URL"
 ```
 
+### `specshift changelog <spec-path>`
+
+Walks the given file's history across git tags and generates a single
+Markdown changelog, diffing each consecutive pair of tagged versions. By
+default it also appends an "Unreleased" section comparing the latest tag
+to the current working tree, if they differ.
+
+```bash
+specshift changelog openapi.yaml --output CHANGELOG-API.md
+```
+
+Options: `--tag-pattern` (glob, default `*`, e.g. `v*` to only consider
+tags starting with `v`), `--no-working-tree` to skip the "Unreleased"
+section, and `--output` to write to a file instead of stdout.
+
 ### `specshift init`
 
 Creates a sample `.specshift.yml` file.
@@ -291,9 +311,32 @@ jobs:
 
 Available inputs: `spec-path`, `base-ref` (defaults to the PR base branch),
 `fail-on` (`breaking` | `warning` | `none`), `ai-summary` (`true`/`false`),
-`ai-provider`, `comment-on-pr` (`true`/`false`), `github-token`, and
-`specshift-version` to pin a specific release. Outputs: `has-breaking-changes`,
-`breaking-count`, `warning-count`, `info-count`, and `report-path`.
+`ai-provider`, `comment-on-pr` (`true`/`false`), `upload-sarif`
+(`true`/`false`, see below), `github-token`, and `specshift-version` to
+pin a specific release. Outputs: `has-breaking-changes`, `breaking-count`,
+`warning-count`, `info-count`, `report-path`, and `sarif-path`.
+
+To also surface results in GitHub's Code Scanning tab, enable
+`upload-sarif` and grant the extra permission it needs:
+
+```yaml
+permissions:
+  pull-requests: write
+  security-events: write
+
+jobs:
+  contract-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: Lethe044/SpecShift@v1
+        with:
+          spec-path: openapi.yaml
+          upload-sarif: 'true'
+```
 
 ### Option 2: calling the CLI directly
 
@@ -379,6 +422,8 @@ judged by wire type category (see the `diff-proto` section above).
 | Natural-language summary | Yes (optional) | No | No |
 | Standalone HTML report | Yes | No | Rarely |
 | Local interactive dashboard | Yes | No | Rarely |
+| Auto-generated changelog across git tags | Yes | No | Rarely |
+| GitHub Code Scanning (SARIF) integration | Yes | No | Rarely |
 | Free to use | Fully free | Free | Usually free |
 | CI integration | Built-in (`check` + official Action) | Manual | Varies |
 | Live URL monitoring | Built-in (`watch`) | No | Rarely |
@@ -390,10 +435,10 @@ This project is under active development. Some planned areas:
 - Path parameter pattern (regex) and discriminator-level rule refinements
 - Deeper GraphQL support: directive-aware deprecation reasons, custom
   scalar compatibility hints, and federation-aware schema composition
-- Protobuf `reserved` statement awareness, so a properly reserved field
-  number isn't flagged the same way as an unreserved removal
 - Optional shared/hosted history for the `serve` dashboard (currently
   in-memory and per-session by design)
+- Changelog generation from raw commit history (not just tags), for
+  repositories that don't tag every release
 
 Feel free to open an issue if you have a feature request.
 

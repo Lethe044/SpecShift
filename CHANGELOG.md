@@ -2,6 +2,29 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-09-06
+
+### Added
+- `specshift changelog <spec-path>`: walks a spec file's history across git
+  tags and generates a single Markdown changelog document, diffing each
+  consecutive pair of tagged versions (plus an optional "Unreleased"
+  section comparing the latest tag to the current working tree). Works
+  with OpenAPI, GraphQL, and Protobuf files, auto-detected by extension.
+  Supports `--tag-pattern` to filter tags (e.g. `v*`) and `--output` to
+  write the result to a file.
+- `--format sarif`: renders results as SARIF 2.1.0, the format GitHub
+  Code Scanning expects, so breaking changes can show up as code scanning
+  alerts instead of only a build log line or PR comment. The official
+  GitHub Action gained a new `upload-sarif` input that generates and
+  uploads this report automatically via `github/codeql-action/upload-sarif`
+  (requires `security-events: write` permission in the calling workflow).
+- Protobuf `reserved` statement awareness: `specshift diff-proto` now
+  parses `reserved` number ranges and quoted names. A field or enum value
+  that is removed and properly reserved is now reported as informational
+  rather than a warning, and a new field or enum value that reuses a
+  number the same file marks as `reserved` is now flagged as breaking
+  (such a schema would fail to compile with `protoc`).
+
 ## [1.2.0] - 2026-09-06
 
 ### Added

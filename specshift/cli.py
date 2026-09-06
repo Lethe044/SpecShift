@@ -12,6 +12,7 @@ from typing import Optional
 
 from specshift import __version__
 from specshift.ai_summary import generate_summary
+from specshift.changelog import ChangelogError, build_changelog, relevant_tags
 from specshift.config import SpecShiftConfig, write_default_config
 from specshift.differ import diff_specs
 from specshift.git_utils import GitError, load_spec_from_git
@@ -24,6 +25,7 @@ from specshift.reporter import (
     render_html_report,
     render_json_report,
     render_markdown_report,
+    render_sarif_report,
 )
 from specshift.spec_loader import SpecLoadError, load_spec
 
@@ -73,6 +75,20 @@ def build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("--ai", action="store_true", help="Add an AI summary to notifications")
     watch_parser.add_argument("--ai-provider", choices=["groq", "gemini", "openai_compatible"], default=None)
 
+    changelog_parser = subparsers.add_parser(
+        "changelog", help="Generates a Markdown changelog of breaking changes across git tags"
+    )
+    changelog_parser.add_argument("spec", help="Path to the specification file (OpenAPI, GraphQL, or .proto)")
+    changelog_parser.add_argument(
+        "--tag-pattern", default="*", help="Glob pattern to filter tags, e.g. 'v*' (default: all tags)"
+    )
+    changelog_parser.add_argument(
+        "--no-working-tree",
+        action="store_true",
+        help="Don't include an 'Unreleased' section comparing the latest tag to the current file",
+    )
+    changelog_parser.add_argument("--output", default=None, help="Write the changelog to a file instead of stdout")
+
     init_parser = subparsers.add_parser("init", help="Creates a sample .specshift.yml configuration file")
     init_parser.add_argument("--path", default=".specshift.yml", help="Path of the file to create")
     init_parser.add_argument("--force", action="store_true", help="Overwrite an existing file")
@@ -89,7 +105,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _add_common_diff_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--format", choices=["console", "markdown", "json", "html"], default="console", help="Output format"
+        "--format", choices=["console", "markdown", "json", "html", "sarif"], default="console", help="Output format"
     )
     parser.add_argument("--output", help="Write the output to a file (stdout if omitted)")
     parser.add_argument("--ai", action="store_true", help="Generate a natural-language AI summary")
@@ -104,6 +120,11 @@ def _add_common_diff_args(parser: argparse.ArgumentParser) -> None:
         help="Determines at which severity level a non-zero exit code is returned",
     )
     parser.add_argument("--quiet", action="store_true", help="Only print the summary line")
+    parser.add_argument(
+        "--artifact-path",
+        default=None,
+        help="File path recorded in --format sarif output (defaults to the 'new' spec argument, when available)",
+    )
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -121,11 +142,16 @@ def main(argv: Optional[list[str]] = None) -> int:
             return _run_check(args)
         if args.command == "watch":
             return _run_watch(args)
+        if args.command == "changelog":
+            return _run_changelog(args)
         if args.command == "init":
             return _run_init(args)
         if args.command == "serve":
             return _run_serve(args)
     except (SpecLoadError, GitError, GraphQLLoadError, ProtoLoadError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    except ChangelogError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
@@ -161,6 +187,7 @@ def _run_check(args: argparse.Namespace) -> int:
     config = SpecShiftConfig.load(args.config)
     spec_path = args.spec or config.spec_path
     base_ref = args.base_ref or config.base_ref
+    args.spec = spec_path  # resolved path, used as the SARIF artifact location if --artifact-path isn't set
 
     old_spec = load_spec_from_git(spec_path, base_ref)
     new_spec = load_spec(spec_path)
@@ -197,6 +224,9 @@ def _emit_result(result: DiffResult, args: argparse.Namespace) -> int:
         output_text = render_markdown_report(result, ai_summary=ai_summary)
     elif args.format == "html":
         output_text = render_html_report(result, ai_summary=ai_summary)
+    elif args.format == "sarif":
+        artifact_path = args.artifact_path or getattr(args, "new", None) or getattr(args, "spec", None) or "specification"
+        output_text = render_sarif_report(result, artifact_path=artifact_path)
     else:
         output_text = None  # console format is printed directly
 
@@ -215,6 +245,8 @@ def _emit_result(result: DiffResult, args: argparse.Namespace) -> int:
         output_path = args.output
         if args.format == "html" and not output_path:
             output_path = "specshift-report.html"
+        if args.format == "sarif" and not output_path:
+            output_path = "specshift-results.sarif"
         if output_path:
             Path(output_path).write_text(output_text, encoding="utf-8")
             print(f"Report written to: {output_path}")
@@ -247,6 +279,23 @@ def _run_serve(args: argparse.Namespace) -> int:
     from specshift.webapp import run_server
 
     run_server(host=args.host, port=args.port, open_browser=not args.no_browser)
+    return 0
+
+
+def _run_changelog(args: argparse.Namespace) -> int:
+    tags = relevant_tags(args.spec, pattern=args.tag_pattern)
+    markdown = build_changelog(
+        args.spec,
+        tags,
+        include_working_tree=not args.no_working_tree,
+    )
+
+    if args.output:
+        Path(args.output).write_text(markdown, encoding="utf-8")
+        print(f"Changelog written to: {args.output}")
+    else:
+        print(markdown)
+
     return 0
 
 

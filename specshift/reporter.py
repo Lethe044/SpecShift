@@ -1,4 +1,4 @@
-"""Renders a DiffResult into console, Markdown, JSON, and HTML reports."""
+"""Renders a DiffResult into console, Markdown, JSON, HTML, and SARIF reports."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import html as html_module
 import json
 from datetime import datetime, timezone
 
+from specshift import __version__
 from specshift.models import DiffResult, Severity
 
 try:
@@ -367,3 +368,89 @@ def render_html_report(result: DiffResult, ai_summary: str | None = None) -> str
         result_class=result_class,
         result_text=result_text,
     )
+
+
+_SARIF_LEVEL = {
+    Severity.BREAKING: "error",
+    Severity.WARNING: "warning",
+    Severity.INFO: "note",
+}
+
+_SARIF_RULES = {
+    Severity.BREAKING: {
+        "id": "specshift-breaking-change",
+        "name": "BreakingChange",
+        "shortDescription": {"text": "A contract change that can break existing consumers."},
+        "helpUri": "https://github.com/Lethe044/SpecShift#when-specshift-calls-something-breaking",
+        "defaultConfiguration": {"level": "error"},
+    },
+    Severity.WARNING: {
+        "id": "specshift-warning-change",
+        "name": "RiskyChange",
+        "shortDescription": {"text": "A contract change worth reviewing, but not necessarily breaking."},
+        "helpUri": "https://github.com/Lethe044/SpecShift#when-specshift-calls-something-breaking",
+        "defaultConfiguration": {"level": "warning"},
+    },
+    Severity.INFO: {
+        "id": "specshift-info-change",
+        "name": "InformationalChange",
+        "shortDescription": {"text": "A non-breaking addition or informational contract change."},
+        "helpUri": "https://github.com/Lethe044/SpecShift#when-specshift-calls-something-breaking",
+        "defaultConfiguration": {"level": "note"},
+    },
+}
+
+
+def render_sarif_report(result: DiffResult, artifact_path: str = "specification") -> str:
+    """
+    Renders the result as SARIF 2.1.0, the format GitHub Code Scanning (and
+    most other static-analysis dashboards) expect. This lets breaking
+    contract changes show up as code scanning alerts, not just a build log
+    line or a PR comment.
+
+    specshift does not track byte-accurate source positions while parsing,
+    so results are not anchored to a specific line: each result points at
+    the artifact file as a whole. This is valid SARIF and still produces
+    real code scanning alerts, just without inline line highlighting.
+    """
+    results = []
+    for change in result.sorted_changes():
+        rule = _SARIF_RULES[change.severity]
+        results.append(
+            {
+                "ruleId": rule["id"],
+                "level": _SARIF_LEVEL[change.severity],
+                "message": {"text": f"{change.location}: {change.message}"},
+                "locations": [
+                    {
+                        "physicalLocation": {
+                            "artifactLocation": {"uri": artifact_path},
+                        }
+                    }
+                ],
+                "properties": {
+                    "category": change.category,
+                    "changeType": change.change_type.value,
+                },
+            }
+        )
+
+    sarif = {
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "specshift",
+                        "informationUri": "https://github.com/Lethe044/SpecShift",
+                        "version": __version__,
+                        "rules": list(_SARIF_RULES.values()),
+                    }
+                },
+                "results": results,
+            }
+        ],
+    }
+
+    return json.dumps(sarif, indent=2, ensure_ascii=False)

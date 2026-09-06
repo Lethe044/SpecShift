@@ -166,3 +166,35 @@ def test_rpc_streaming_change_is_breaking():
     new = "service S { rpc Get(Req) returns (stream Res); }"
     result = diff_protos(old, new)
     assert result.has_breaking_changes
+
+
+def test_field_removed_and_reserved_is_info_not_warning():
+    old = "message M { string id = 1; string legacy = 2; }"
+    new = 'message M { string id = 1; reserved 2; reserved "legacy"; }'
+    result = diff_protos(old, new)
+    assert not result.has_breaking_changes
+    assert not result.warnings
+    assert any(c.severity.value == "info" and "reserved" in c.message for c in result.changes)
+
+
+def test_reserved_range_and_names_are_parsed():
+    defs = parse_proto('message M { reserved 2, 15, 9 to 11; reserved "foo", "bar"; }')
+    reserved = defs["messages"]["M"]["reserved_numbers"]
+    assert reserved == {2, 9, 10, 11, 15}
+    assert defs["messages"]["M"]["reserved_names"] == {"foo", "bar"}
+
+
+def test_new_field_reusing_reserved_number_is_breaking():
+    old = "message M { string id = 1; }"
+    new = "message M { string id = 1; int32 age = 5; reserved 5; }"
+    result = diff_protos(old, new)
+    assert result.has_breaking_changes
+    assert any("reserved" in c.message and "protoc" in c.message for c in result.breaking_changes)
+
+
+def test_enum_value_removed_and_reserved_is_info_not_warning():
+    old = "enum Role { ADMIN = 0; MEMBER = 1; }"
+    new = 'enum Role { ADMIN = 0; reserved 1; reserved "MEMBER"; }'
+    result = diff_protos(old, new)
+    assert not result.has_breaking_changes
+    assert not result.warnings

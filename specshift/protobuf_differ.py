@@ -24,8 +24,11 @@ guidance (see https://protobuf.dev/programming-guides/proto3/#updating):
 - Reusing a removed field's number for a differently-typed field is
   breaking, since old serialized bytes would be silently reinterpreted
   under the wrong wire type. Removing a field without reusing its number
-  is only a warning (protobuf's own guidance recommends using `reserved`
-  in this case, which this tool cannot fully verify from the file alone).
+  is only a warning, and becomes purely informational when the file
+  properly declares the number (or name) with a `reserved` statement,
+  which this tool does parse and take into account. Reusing a number
+  that the same file marks as `reserved` is flagged as breaking, since
+  `protoc` itself would refuse to compile such a schema.
   Enum values carry no type information of their own (every enum value is
   just an integer on the wire), so renaming or reassigning an enum value's
   name is flagged as a warning rather than breaking: the bytes on the wire
@@ -68,6 +71,8 @@ _RPC_RE = re.compile(
 )
 
 _SYNTAX_RE = re.compile(r'syntax\s*=\s*"([^"]+)"\s*;')
+
+_RESERVED_STMT_RE = re.compile(r"reserved\s+([^;]+);")
 
 _VARINT_STANDARD = {"int32", "int64", "uint32", "uint64", "bool"}
 _VARINT_ZIGZAG = {"sint32", "sint64"}
@@ -152,6 +157,36 @@ def _extract_top_level_blocks(text: str) -> list[tuple[str, str, str]]:
     return blocks
 
 
+def _parse_reserved(body: str) -> tuple[set, set]:
+    """
+    Parses 'reserved' statements from a message or enum body, e.g.
+    'reserved 2, 15, 9 to 11;' and 'reserved "foo", "bar";'. Returns
+    (reserved_numbers, reserved_names).
+    """
+    numbers: set = set()
+    names: set = set()
+
+    for stmt_match in _RESERVED_STMT_RE.finditer(body):
+        for part in stmt_match.group(1).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if part.startswith('"') and part.endswith('"'):
+                names.add(part.strip('"'))
+                continue
+            range_match = re.match(r"^(\d+)\s+to\s+(\d+|max)$", part)
+            if range_match:
+                start = int(range_match.group(1))
+                end_token = range_match.group(2)
+                end = 536870911 if end_token == "max" else int(end_token)
+                numbers.update(range(start, end + 1))
+                continue
+            if part.isdigit():
+                numbers.add(int(part))
+
+    return numbers, names
+
+
 def parse_proto(text: str) -> dict:
     """Parses .proto text into a dict describing messages, enums, and services."""
     text = _strip_comments(text)
@@ -170,12 +205,22 @@ def parse_proto(text: str) -> dict:
                     "type": field_match.group("type"),
                     "number": int(field_match.group("number")),
                 }
-            definitions["messages"][name] = {"fields": fields}
+            reserved_numbers, reserved_names = _parse_reserved(body)
+            definitions["messages"][name] = {
+                "fields": fields,
+                "reserved_numbers": reserved_numbers,
+                "reserved_names": reserved_names,
+            }
         elif kind == "enum":
             values = {}
             for value_match in _ENUM_VALUE_RE.finditer(body):
                 values[value_match.group("name")] = int(value_match.group("number"))
-            definitions["enums"][name] = {"values": values}
+            reserved_numbers, reserved_names = _parse_reserved(body)
+            definitions["enums"][name] = {
+                "values": values,
+                "reserved_numbers": reserved_numbers,
+                "reserved_names": reserved_names,
+            }
         elif kind == "service":
             methods = {}
             for rpc_match in _RPC_RE.finditer(body):
@@ -262,10 +307,26 @@ def _diff_messages(old_messages: dict, new_messages: dict, enum_names: set, resu
             )
 
     for name in set(old_messages) & set(new_messages):
-        _diff_fields(name, old_messages[name]["fields"], new_messages[name]["fields"], enum_names, result)
+        _diff_fields(
+            name,
+            old_messages[name]["fields"],
+            new_messages[name]["fields"],
+            enum_names,
+            new_messages[name].get("reserved_numbers", set()),
+            new_messages[name].get("reserved_names", set()),
+            result,
+        )
 
 
-def _diff_fields(msg_name: str, old_fields: dict, new_fields: dict, enum_names: set, result: DiffResult) -> None:
+def _diff_fields(
+    msg_name: str,
+    old_fields: dict,
+    new_fields: dict,
+    enum_names: set,
+    new_reserved_numbers: set,
+    new_reserved_names: set,
+    result: DiffResult,
+) -> None:
     # A field whose name survives but whose number changes is always breaking,
     # regardless of what else changed, and is handled separately from the
     # number-keyed removal/addition logic below so it isn't mistaken for an
@@ -301,18 +362,33 @@ def _diff_fields(msg_name: str, old_fields: dict, new_fields: dict, enum_names: 
 
     for number, (old_name, old_field) in old_by_number.items():
         if number not in new_by_number:
-            result.add(
-                Change(
-                    severity=Severity.WARNING,
-                    change_type=ChangeType.REMOVED,
-                    location=f"{msg_name}.{old_name}",
-                    message=(
-                        f"Field '{old_name}' (number {number}) has been removed. "
-                        f"Consider adding 'reserved {number};' to prevent it from being reused."
-                    ),
-                    category="proto_field",
+            is_reserved = number in new_reserved_numbers or old_name in new_reserved_names
+            if is_reserved:
+                result.add(
+                    Change(
+                        severity=Severity.INFO,
+                        change_type=ChangeType.REMOVED,
+                        location=f"{msg_name}.{old_name}",
+                        message=(
+                            f"Field '{old_name}' (number {number}) has been removed and properly reserved, "
+                            "preventing accidental reuse."
+                        ),
+                        category="proto_field",
+                    )
                 )
-            )
+            else:
+                result.add(
+                    Change(
+                        severity=Severity.WARNING,
+                        change_type=ChangeType.REMOVED,
+                        location=f"{msg_name}.{old_name}",
+                        message=(
+                            f"Field '{old_name}' (number {number}) has been removed. "
+                            f"Consider adding 'reserved {number};' to prevent it from being reused."
+                        ),
+                        category="proto_field",
+                    )
+                )
             continue
 
         new_name, new_field = new_by_number[number]
@@ -344,15 +420,29 @@ def _diff_fields(msg_name: str, old_fields: dict, new_fields: dict, enum_names: 
 
     for number, (new_name, new_field) in new_by_number.items():
         if number not in old_by_number:
-            result.add(
-                Change(
-                    severity=Severity.INFO,
-                    change_type=ChangeType.ADDED,
-                    location=f"{msg_name}.{new_name}",
-                    message=f"New field added: '{new_name}' (number {number}). Adding fields is always wire-safe.",
-                    category="proto_field",
+            if number in new_reserved_numbers or new_name in new_reserved_names:
+                result.add(
+                    Change(
+                        severity=Severity.BREAKING,
+                        change_type=ChangeType.ADDED,
+                        location=f"{msg_name}.{new_name}",
+                        message=(
+                            f"Field '{new_name}' uses number {number}, which this same file also marks as "
+                            "'reserved'. This is an invalid schema and will fail to compile with protoc."
+                        ),
+                        category="proto_field",
+                    )
                 )
-            )
+            else:
+                result.add(
+                    Change(
+                        severity=Severity.INFO,
+                        change_type=ChangeType.ADDED,
+                        location=f"{msg_name}.{new_name}",
+                        message=f"New field added: '{new_name}' (number {number}). Adding fields is always wire-safe.",
+                        category="proto_field",
+                    )
+                )
 
     # A number that used to belong to one field and now belongs to a
     # differently-typed field is the dangerous case: old serialized bytes
@@ -469,39 +559,82 @@ def _diff_enums(old_enums: dict, new_enums: dict, result: DiffResult) -> None:
             )
 
     for name in set(old_enums) & set(new_enums):
-        _diff_enum_values(name, old_enums[name]["values"], new_enums[name]["values"], result)
+        _diff_enum_values(
+            name,
+            old_enums[name]["values"],
+            new_enums[name]["values"],
+            new_enums[name].get("reserved_numbers", set()),
+            new_enums[name].get("reserved_names", set()),
+            result,
+        )
 
 
-def _diff_enum_values(enum_name: str, old_values: dict, new_values: dict, result: DiffResult) -> None:
+def _diff_enum_values(
+    enum_name: str,
+    old_values: dict,
+    new_values: dict,
+    new_reserved_numbers: set,
+    new_reserved_names: set,
+    result: DiffResult,
+) -> None:
     old_by_number = {number: name for name, number in old_values.items()}
     new_by_number = {number: name for name, number in new_values.items()}
 
     for number, old_name in old_by_number.items():
         if number not in new_by_number:
-            result.add(
-                Change(
-                    severity=Severity.WARNING,
-                    change_type=ChangeType.REMOVED,
-                    location=f"{enum_name}.{old_name}",
-                    message=(
-                        f"Enum value '{old_name}' (number {number}) has been removed. "
-                        f"Consider adding 'reserved {number};' to prevent it from being reused."
-                    ),
-                    category="proto_enum_value",
+            is_reserved = number in new_reserved_numbers or old_name in new_reserved_names
+            if is_reserved:
+                result.add(
+                    Change(
+                        severity=Severity.INFO,
+                        change_type=ChangeType.REMOVED,
+                        location=f"{enum_name}.{old_name}",
+                        message=(
+                            f"Enum value '{old_name}' (number {number}) has been removed and properly reserved, "
+                            "preventing accidental reuse."
+                        ),
+                        category="proto_enum_value",
+                    )
                 )
-            )
+            else:
+                result.add(
+                    Change(
+                        severity=Severity.WARNING,
+                        change_type=ChangeType.REMOVED,
+                        location=f"{enum_name}.{old_name}",
+                        message=(
+                            f"Enum value '{old_name}' (number {number}) has been removed. "
+                            f"Consider adding 'reserved {number};' to prevent it from being reused."
+                        ),
+                        category="proto_enum_value",
+                    )
+                )
 
     for number, new_name in new_by_number.items():
         if number not in old_by_number:
-            result.add(
-                Change(
-                    severity=Severity.INFO,
-                    change_type=ChangeType.ADDED,
-                    location=f"{enum_name}.{new_name}",
-                    message=f"New enum value added: '{new_name}' (number {number}).",
-                    category="proto_enum_value",
+            if number in new_reserved_numbers or new_name in new_reserved_names:
+                result.add(
+                    Change(
+                        severity=Severity.BREAKING,
+                        change_type=ChangeType.ADDED,
+                        location=f"{enum_name}.{new_name}",
+                        message=(
+                            f"Enum value '{new_name}' uses number {number}, which this same file also marks as "
+                            "'reserved'. This is an invalid schema and will fail to compile with protoc."
+                        ),
+                        category="proto_enum_value",
+                    )
                 )
-            )
+            else:
+                result.add(
+                    Change(
+                        severity=Severity.INFO,
+                        change_type=ChangeType.ADDED,
+                        location=f"{enum_name}.{new_name}",
+                        message=f"New enum value added: '{new_name}' (number {number}).",
+                        category="proto_enum_value",
+                    )
+                )
         elif old_by_number[number] != new_name:
             result.add(
                 Change(

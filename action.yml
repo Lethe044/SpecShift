@@ -31,6 +31,10 @@ inputs:
     description: "Whether to post (and keep updated) the report as a pull request comment."
     required: false
     default: "true"
+  upload-sarif:
+    description: "Whether to generate a SARIF report and upload it to GitHub Code Scanning. Requires 'security-events: write' permission in the calling workflow."
+    required: false
+    default: "false"
   github-token:
     description: "Token used to read and post the pull request comment."
     required: false
@@ -56,6 +60,9 @@ outputs:
   report-path:
     description: "Path to the generated Markdown report."
     value: "specshift-report.md"
+  sarif-path:
+    description: "Path to the generated SARIF report, when upload-sarif is enabled."
+    value: "specshift-results.sarif"
 
 runs:
   using: "composite"
@@ -115,6 +122,16 @@ runs:
           --output specshift-report.json \
           --fail-on none
 
+        if [ "${{ inputs.upload-sarif }}" = "true" ]; then
+          specshift check \
+            --spec "${{ inputs.spec-path }}" \
+            --base-ref "${{ steps.base_ref.outputs.ref }}" \
+            --format sarif \
+            --artifact-path "${{ inputs.spec-path }}" \
+            --output specshift-results.sarif \
+            --fail-on none
+        fi
+
         python3 "${{ github.action_path }}/.github/scripts/parse_summary.py" specshift-report.json
 
     - name: Comment on pull request
@@ -156,6 +173,12 @@ runs:
               body: commentBody,
             });
           }
+
+    - name: Upload SARIF results
+      if: ${{ inputs.upload-sarif == 'true' }}
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: specshift-results.sarif
 
     - name: Enforce fail-on threshold
       shell: bash

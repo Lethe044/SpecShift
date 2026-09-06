@@ -55,3 +55,41 @@ def test_render_html_report_embeds_ai_summary():
     html = render_html_report(result, ai_summary="This is a test summary.")
     assert "This is a test summary." in html
     assert "ai-summary" in html
+
+
+def test_render_sarif_report_is_valid_structure():
+    from specshift.reporter import render_sarif_report
+
+    result = make_result()
+    sarif_text = render_sarif_report(result, artifact_path="openapi.yaml")
+    sarif = json.loads(sarif_text)
+
+    assert sarif["version"] == "2.1.0"
+    assert sarif["runs"][0]["tool"]["driver"]["name"] == "specshift"
+    assert len(sarif["runs"][0]["results"]) == len(result.changes)
+    first_result = sarif["runs"][0]["results"][0]
+    assert first_result["level"] == "error"
+    assert first_result["ruleId"] == "specshift-breaking-change"
+    assert first_result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "openapi.yaml"
+
+
+def test_render_sarif_report_maps_all_severity_levels():
+    from specshift.differ import diff_specs
+    from specshift.reporter import render_sarif_report
+
+    old = {
+        "info": {"title": "T", "version": "1.0"},
+        "paths": {
+            "/a": {"get": {"responses": {"200": {"description": "ok"}}}},
+            "/b": {"get": {"responses": {"200": {"description": "ok"}}}},
+        },
+    }
+    new = {
+        "info": {"title": "T", "version": "2.0"},
+        "paths": {"/b": {"get": {"responses": {"200": {"description": "ok"}}}}, "/c": {"get": {"responses": {"200": {"description": "ok"}}}}},
+    }
+    result = diff_specs(old, new)
+    sarif = json.loads(render_sarif_report(result))
+    levels = {r["level"] for r in sarif["runs"][0]["results"]}
+    assert "error" in levels
+    assert "note" in levels

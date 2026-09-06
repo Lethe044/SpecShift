@@ -35,6 +35,19 @@ jobs:
           specshift diff-graphql examples/old_schema.graphql examples/new_schema.graphql --format json --fail-on none
           specshift diff-proto examples/old_service.proto examples/new_service.proto --format json --fail-on none
           specshift diff examples/old_api.yaml examples/new_api.yaml --format html --output /tmp/report.html --fail-on none
+          specshift diff examples/old_api.yaml examples/new_api.yaml --format sarif --output /tmp/report.sarif --fail-on none
+
+      - name: Smoke test the changelog command
+        run: |
+          git init -q /tmp/changelog-smoke
+          cp examples/old_api.yaml /tmp/changelog-smoke/openapi.yaml
+          cd /tmp/changelog-smoke
+          git -c user.email=ci@example.com -c user.name=ci add .
+          git -c user.email=ci@example.com -c user.name=ci commit -q -m "v1"
+          git tag v1.0.0
+          cp "$GITHUB_WORKSPACE/examples/new_api.yaml" openapi.yaml
+          specshift changelog openapi.yaml --output CHANGELOG-API.md
+          grep -q "v1.0.0" CHANGELOG-API.md
 
       - name: Smoke test the local dashboard
         run: |
