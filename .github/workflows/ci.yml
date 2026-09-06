@@ -33,7 +33,16 @@ jobs:
           specshift --version
           specshift diff examples/old_api.yaml examples/new_api.yaml --format json --fail-on none
           specshift diff-graphql examples/old_schema.graphql examples/new_schema.graphql --format json --fail-on none
+          specshift diff-proto examples/old_service.proto examples/new_service.proto --format json --fail-on none
           specshift diff examples/old_api.yaml examples/new_api.yaml --format html --output /tmp/report.html --fail-on none
+
+      - name: Smoke test the local dashboard
+        run: |
+          specshift serve --port 8787 --no-browser &
+          SERVER_PID=$!
+          sleep 2
+          curl -sf http://127.0.0.1:8787/ > /dev/null
+          kill $SERVER_PID
 
   self-check:
     runs-on: ubuntu-latest

@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package bookstore.v1;
+
+message CreateBookRequest {
+  string title = 1;
+  string author = 2;
+  int64 pages = 3;
+  repeated string tags = 4;
+  string isbn = 5;
+}
+
+message Book {
+  string id = 1;
+  string full_title = 2;
+  BookStatus status = 3;
+  bool featured = 4;
+}
+
+enum BookStatus {
+  AVAILABLE = 0;
+  SOLD = 1;
+}
+
+service BookService {
+  rpc CreateBook(CreateBookRequest) returns (Book);
+  rpc GetBook(GetBookRequest) returns (stream Book);
+  rpc DeleteBook(DeleteBookRequest) returns (DeleteBookResponse);
+}

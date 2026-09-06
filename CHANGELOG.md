@@ -2,6 +2,37 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-09-06
+
+### Added
+- Protobuf/gRPC schema diffing via the new `specshift diff-proto` command,
+  using a dependency-free `.proto` parser (proto2 and proto3, including
+  fields declared inside `oneof` blocks). Severity is based on protobuf's
+  own documented wire-compatibility rules rather than JSON shape:
+  - Adding a field or rpc method is always info-level, since protobuf's
+    wire format safely ignores anything it doesn't recognize.
+  - Changing a field's number is always breaking (the number, not the
+    name, is what the wire format keys on).
+  - Field type changes are compared by wire type category (varint,
+    64-bit, 32-bit, length-delimited); crossing categories is breaking,
+    changing within the same category (e.g. int32 -> int64, string ->
+    bytes) is a warning since it can be lossy. `sint32`/`sint64` use
+    zigzag encoding and are treated as incompatible with the other
+    varint types even though they share a wire type, matching the
+    official protobuf documentation.
+  - Reusing a removed field's number for a differently-typed field is
+    breaking; removing a field or enum value without reuse is a warning.
+  - Cardinality changes (singular <-> repeated) and rpc streaming mode
+    changes are breaking; rpc request/response type changes are breaking.
+- A local, dependency-free web dashboard via `specshift serve`: opens a
+  browser tab where you can drag in or paste two OpenAPI, GraphQL, or
+  Protobuf files, auto-detects the contract type, and renders the same
+  styled HTML report as the CLI, with a short in-session comparison
+  history. Built entirely on Python's standard library (`http.server`),
+  so it needs no extra dependency and binds to localhost only.
+- New example Protobuf schemas (`examples/old_service.proto`,
+  `examples/new_service.proto`) demonstrating the new command.
+
 ## [1.1.0] - 2026-09-03
 
 ### Added

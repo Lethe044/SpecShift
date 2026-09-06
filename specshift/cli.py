@@ -18,6 +18,7 @@ from specshift.git_utils import GitError, load_spec_from_git
 from specshift.graphql_differ import GraphQLLoadError, diff_graphql, load_sdl
 from specshift.models import DiffResult
 from specshift.notifier import NotifyError, notify_discord, notify_slack
+from specshift.protobuf_differ import ProtoLoadError, diff_protos, load_proto
 from specshift.reporter import (
     print_console_report,
     render_html_report,
@@ -32,7 +33,7 @@ CACHE_DIR = Path(".specshift_cache")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="specshift",
-        description="Detects and classifies changes in OpenAPI/Swagger and GraphQL contracts.",
+        description="Detects and classifies changes in OpenAPI/Swagger, GraphQL, and Protobuf/gRPC contracts.",
     )
     parser.add_argument("--version", action="version", version=f"specshift {__version__}")
 
@@ -47,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
     graphql_parser.add_argument("old", help="Old GraphQL schema: file path or URL")
     graphql_parser.add_argument("new", help="New GraphQL schema: file path or URL")
     _add_common_diff_args(graphql_parser)
+
+    proto_parser = subparsers.add_parser("diff-proto", help="Compare two Protobuf/gRPC .proto schemas")
+    proto_parser.add_argument("old", help="Old .proto schema: file path or URL")
+    proto_parser.add_argument("new", help="New .proto schema: file path or URL")
+    _add_common_diff_args(proto_parser)
 
     check_parser = subparsers.add_parser(
         "check", help="For CI: compares the current specification against a git reference"
@@ -70,6 +76,13 @@ def build_parser() -> argparse.ArgumentParser:
     init_parser = subparsers.add_parser("init", help="Creates a sample .specshift.yml configuration file")
     init_parser.add_argument("--path", default=".specshift.yml", help="Path of the file to create")
     init_parser.add_argument("--force", action="store_true", help="Overwrite an existing file")
+
+    serve_parser = subparsers.add_parser(
+        "serve", help="Starts a local web dashboard for comparing specs interactively in the browser"
+    )
+    serve_parser.add_argument("--host", default="127.0.0.1", help="Host to bind to (default: 127.0.0.1)")
+    serve_parser.add_argument("--port", type=int, default=8787, help="Port to listen on (default: 8787)")
+    serve_parser.add_argument("--no-browser", action="store_true", help="Don't automatically open a browser tab")
 
     return parser
 
@@ -102,13 +115,17 @@ def main(argv: Optional[list[str]] = None) -> int:
             return _run_diff(args)
         if args.command == "diff-graphql":
             return _run_diff_graphql(args)
+        if args.command == "diff-proto":
+            return _run_diff_proto(args)
         if args.command == "check":
             return _run_check(args)
         if args.command == "watch":
             return _run_watch(args)
         if args.command == "init":
             return _run_init(args)
-    except (SpecLoadError, GitError, GraphQLLoadError) as exc:
+        if args.command == "serve":
+            return _run_serve(args)
+    except (SpecLoadError, GitError, GraphQLLoadError, ProtoLoadError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
@@ -130,6 +147,13 @@ def _run_diff_graphql(args: argparse.Namespace) -> int:
     old_sdl = load_sdl(args.old)
     new_sdl = load_sdl(args.new)
     result = diff_graphql(old_sdl, new_sdl)
+    return _emit_result(result, args)
+
+
+def _run_diff_proto(args: argparse.Namespace) -> int:
+    old_proto = load_proto(args.old)
+    new_proto = load_proto(args.new)
+    result = diff_protos(old_proto, new_proto)
     return _emit_result(result, args)
 
 
@@ -216,6 +240,13 @@ def _run_init(args: argparse.Namespace) -> int:
 
     write_default_config(str(target))
     print(f"Configuration file created: {target}")
+    return 0
+
+
+def _run_serve(args: argparse.Namespace) -> int:
+    from specshift.webapp import run_server
+
+    run_server(host=args.host, port=args.port, open_browser=not args.no_browser)
     return 0
 
 

@@ -57,6 +57,10 @@ requirement.
 - **GraphQL support**: diff GraphQL SDL schemas with `specshift diff-graphql`,
   covering types, fields, arguments, enum values, interfaces, unions, and
   deprecations, no external GraphQL library required.
+- **Protobuf/gRPC support**: diff `.proto` files with `specshift diff-proto`,
+  using protobuf's own documented wire-compatibility rules (field numbers,
+  wire type categories, zigzag encoding) rather than generic JSON-shape
+  heuristics, so severity reflects what will actually break on the wire.
 - **Context-aware classification**: the same change is weighted
   differently depending on whether it occurs in a request or a response
   (or, for GraphQL, an input type versus an object type).
@@ -77,6 +81,10 @@ requirement.
 - **Live monitoring**: the `specshift watch` command periodically checks
   a remote API's specification and sends a Slack or Discord notification
   when it changes.
+- **Local web dashboard**: `specshift serve` opens a browser-based tool
+  for comparing specs interactively (drag in files or paste text), with
+  zero extra dependencies since it runs entirely on Python's standard
+  library and stays on localhost.
 - **Four output formats**: a colored console table, a Markdown report
   (ideal for PR comments), JSON (for integrating with other tools), and a
   standalone, filterable HTML report you can open in any browser.
@@ -195,6 +203,33 @@ an http(s) URL, or raw SDL text. Supports the same `--format`, `--output`,
 ```bash
 specshift diff-graphql old_schema.graphql new_schema.graphql
 ```
+
+### `specshift diff-proto <old> <new>`
+
+Compares two Protobuf/gRPC `.proto` schemas using protobuf's own
+wire-compatibility rules (field numbers, wire type categories) rather
+than generic JSON-shape heuristics. Supports the same `--format`,
+`--output`, `--ai`, and `--fail-on` options as `diff`.
+
+```bash
+specshift diff-proto old_service.proto new_service.proto
+```
+
+### `specshift serve`
+
+Starts a local, dependency-free web dashboard for comparing specs
+interactively. Opens a browser tab where you can drag in or paste two
+files (OpenAPI, GraphQL, or Protobuf, auto-detected), and view the same
+styled HTML report the CLI produces, with a short history of past
+comparisons in the current session.
+
+```bash
+specshift serve
+# or: specshift serve --port 9000 --no-browser
+```
+
+Everything runs in-process on your machine; nothing is uploaded anywhere,
+and the server binds to `127.0.0.1` by default.
 
 ### `specshift check`
 
@@ -329,14 +364,21 @@ common scenarios:
 The same table applies to GraphQL: `input` types behave like requests,
 `type`/`interface` fields behave like responses.
 
+Protobuf/gRPC follows a different model, based on the wire format rather
+than request/response direction: adding fields or rpc methods is always
+safe, changing a field's number is always breaking, and type changes are
+judged by wire type category (see the `diff-proto` section above).
+
 ## Comparison with other tools
 
 | | SpecShift | Raw JSON/YAML diff | oasdiff / openapi-diff style tools |
 |---|---|---|---|
 | Context-aware classification | Yes | No | Partially |
 | GraphQL support | Yes | No | Rarely |
+| Protobuf/gRPC support (wire-aware) | Yes | No | Rarely |
 | Natural-language summary | Yes (optional) | No | No |
 | Standalone HTML report | Yes | No | Rarely |
+| Local interactive dashboard | Yes | No | Rarely |
 | Free to use | Fully free | Free | Usually free |
 | CI integration | Built-in (`check` + official Action) | Manual | Varies |
 | Live URL monitoring | Built-in (`watch`) | No | Rarely |
@@ -345,11 +387,13 @@ The same table applies to GraphQL: `input` types behave like requests,
 
 This project is under active development. Some planned areas:
 
-- Support for gRPC/Protobuf contracts
 - Path parameter pattern (regex) and discriminator-level rule refinements
-- A hosted, shareable web viewer (beyond the offline HTML report)
 - Deeper GraphQL support: directive-aware deprecation reasons, custom
   scalar compatibility hints, and federation-aware schema composition
+- Protobuf `reserved` statement awareness, so a properly reserved field
+  number isn't flagged the same way as an unreserved removal
+- Optional shared/hosted history for the `serve` dashboard (currently
+  in-memory and per-session by design)
 
 Feel free to open an issue if you have a feature request.
 
