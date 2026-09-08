@@ -2,6 +2,32 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-09-08
+
+### Added
+- `specshift lint <spec>`: a new command that reviews a single OpenAPI/
+  Swagger document for spec-validity problems and best-practice gaps,
+  independent of comparing it to any other version. It reuses the exact
+  same severity model and report formats (console, Markdown, JSON, HTML,
+  SARIF) as the diff commands. Checks include:
+  - Path template parameters that aren't declared, or path parameters
+    declared without `required: true` (both invalid per the OpenAPI spec)
+  - Responses missing a `description` (required by the OpenAPI spec)
+  - Security requirements referencing an undefined security scheme
+  - Duplicate `operationId` values across the document
+  - Missing `summary`/`description`, missing `operationId`, and missing
+    documented error (4xx/5xx) responses on non-safe operations
+  - Inconsistent path segment naming conventions (mixing kebab-case,
+    snake_case, and camelCase)
+  - Schemas defined under `components.schemas` that don't appear to be
+    referenced anywhere in the document
+- The AI summary feature and all text-based report formats now adapt
+  their wording to whether they're describing a diff between two
+  versions or a single-document lint pass (e.g. "issues found" and
+  "should be fixed for spec validity" instead of diff-oriented phrasing).
+- Single-version reports (like lint results) now show a clean `Title :
+  version` header instead of an empty version arrow.
+
 ## [1.3.0] - 2026-09-06
 
 ### Added

@@ -17,6 +17,7 @@ from specshift.config import SpecShiftConfig, write_default_config
 from specshift.differ import diff_specs
 from specshift.git_utils import GitError, load_spec_from_git
 from specshift.graphql_differ import GraphQLLoadError, diff_graphql, load_sdl
+from specshift.linter import lint_spec
 from specshift.models import DiffResult
 from specshift.notifier import NotifyError, notify_discord, notify_slack
 from specshift.protobuf_differ import ProtoLoadError, diff_protos, load_proto
@@ -35,7 +36,8 @@ CACHE_DIR = Path(".specshift_cache")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="specshift",
-        description="Detects and classifies changes in OpenAPI/Swagger, GraphQL, and Protobuf/gRPC contracts.",
+        description="Detects and classifies changes in OpenAPI/Swagger, GraphQL, and Protobuf/gRPC contracts, "
+        "and lints a single OpenAPI specification for best practices.",
     )
     parser.add_argument("--version", action="version", version=f"specshift {__version__}")
 
@@ -55,6 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
     proto_parser.add_argument("old", help="Old .proto schema: file path or URL")
     proto_parser.add_argument("new", help="New .proto schema: file path or URL")
     _add_common_diff_args(proto_parser)
+
+    lint_parser = subparsers.add_parser(
+        "lint", help="Checks a single OpenAPI/Swagger specification for validity and best-practice issues"
+    )
+    lint_parser.add_argument("spec", help="Specification to lint: file path or URL")
+    _add_common_diff_args(lint_parser)
 
     check_parser = subparsers.add_parser(
         "check", help="For CI: compares the current specification against a git reference"
@@ -138,6 +146,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             return _run_diff_graphql(args)
         if args.command == "diff-proto":
             return _run_diff_proto(args)
+        if args.command == "lint":
+            return _run_lint(args)
         if args.command == "check":
             return _run_check(args)
         if args.command == "watch":
@@ -183,6 +193,12 @@ def _run_diff_proto(args: argparse.Namespace) -> int:
     return _emit_result(result, args)
 
 
+def _run_lint(args: argparse.Namespace) -> int:
+    spec = load_spec(args.spec)
+    result = lint_spec(spec)
+    return _emit_result(result, args, context="lint")
+
+
 def _run_check(args: argparse.Namespace) -> int:
     config = SpecShiftConfig.load(args.config)
     spec_path = args.spec or config.spec_path
@@ -212,18 +228,18 @@ def _run_check(args: argparse.Namespace) -> int:
     return exit_code
 
 
-def _emit_result(result: DiffResult, args: argparse.Namespace) -> int:
+def _emit_result(result: DiffResult, args: argparse.Namespace, context: str = "diff") -> int:
     ai_summary = None
     if args.ai:
-        ai_summary = generate_summary(result, provider=args.ai_provider, model=args.ai_model)
+        ai_summary = generate_summary(result, provider=args.ai_provider, model=args.ai_model, context=context)
 
     output_text: str
     if args.format == "json":
         output_text = render_json_report(result, ai_summary=ai_summary)
     elif args.format == "markdown":
-        output_text = render_markdown_report(result, ai_summary=ai_summary)
+        output_text = render_markdown_report(result, ai_summary=ai_summary, context=context)
     elif args.format == "html":
-        output_text = render_html_report(result, ai_summary=ai_summary)
+        output_text = render_html_report(result, ai_summary=ai_summary, context=context)
     elif args.format == "sarif":
         artifact_path = args.artifact_path or getattr(args, "new", None) or getattr(args, "spec", None) or "specification"
         output_text = render_sarif_report(result, artifact_path=artifact_path)
@@ -234,11 +250,11 @@ def _emit_result(result: DiffResult, args: argparse.Namespace) -> int:
         if args.output:
             from specshift.reporter import render_plain_text_report
 
-            Path(args.output).write_text(render_plain_text_report(result), encoding="utf-8")
+            Path(args.output).write_text(render_plain_text_report(result, context=context), encoding="utf-8")
             if not args.quiet:
                 print(f"Report written to: {args.output}")
         else:
-            print_console_report(result, verbose=not args.quiet)
+            print_console_report(result, verbose=not args.quiet, context=context)
             if ai_summary:
                 print(f"\nAI Summary:\n{ai_summary}")
     else:

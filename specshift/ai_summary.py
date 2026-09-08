@@ -36,13 +36,18 @@ def generate_summary(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     timeout: int = 30,
+    context: str = "diff",
 ) -> str:
     """
     Returns a natural-language summary using a configured AI provider when
     possible, otherwise falls back to a rule-based summary. Never raises an
     exception that would halt execution; failures fall back silently.
+
+    context is either "diff" (comparing two versions, the default) or
+    "lint" (findings about a single specification), and selects which
+    prompt and fallback wording is used.
     """
-    prompt = _build_prompt(result)
+    prompt = _build_prompt(result, context=context)
 
     chosen_provider = provider or _detect_provider()
 
@@ -64,7 +69,7 @@ def generate_summary(
         except AISummaryError:
             pass
 
-    return build_template_summary(result)
+    return build_template_summary(result, context=context)
 
 
 def _detect_provider() -> Optional[str]:
@@ -77,19 +82,40 @@ def _detect_provider() -> Optional[str]:
     return None
 
 
-def _build_prompt(result: DiffResult) -> str:
+def _build_prompt(result: DiffResult, context: str = "diff") -> str:
     counts = result.summary_counts()
+
+    if context == "lint":
+        intro = (
+            "Below is a list of issues found while linting a single OpenAPI "
+            "specification for correctness and best practices. This is NOT a "
+            "comparison between two versions, it is a quality review of one "
+            "document. Read this list and write a short, clear, professional "
+            "summary in English that a developer maintaining this API would "
+            "understand. First highlight any spec-validity issues (things that "
+            "could break tooling or fail parsing), then best-practice gaps, "
+            "then minor style suggestions. Do not use lists or headings, write "
+            "in flowing paragraphs. Do not invent information, base the "
+            "summary only on the findings given.",
+        )
+        total_label = "issues"
+    else:
+        intro = (
+            "Below is a list of contract changes detected between two versions "
+            "of an API. Read this list and write a short, clear, professional "
+            "summary in English that a developer consuming this API would "
+            "understand. First highlight the most important breaking changes, "
+            "then anything worth paying attention to, and finally briefly "
+            "mention minor additions. Do not use lists or headings, write in "
+            "flowing paragraphs. Do not invent information, base the summary "
+            "only on the changes given.",
+        )
+        total_label = "changes"
+
     lines = [
-        "Below is a list of contract changes detected between two versions "
-        "of an API. Read this list and write a short, clear, professional "
-        "summary in English that a developer consuming this API would "
-        "understand. First highlight the most important breaking changes, "
-        "then anything worth paying attention to, and finally briefly "
-        "mention minor additions. Do not use lists or headings, write in "
-        "flowing paragraphs. Do not invent information, base the summary "
-        "only on the changes given.",
+        intro[0],
         "",
-        f"Total: {counts['breaking']} breaking, {counts['warning']} warning, {counts['info']} informational changes.",
+        f"Total: {counts['breaking']} breaking, {counts['warning']} warning, {counts['info']} informational {total_label}.",
         "",
     ]
     for change in result.sorted_changes()[:60]:
@@ -160,8 +186,14 @@ def _call_openai_compatible(prompt: str, model: Optional[str], timeout: int) -> 
         raise AISummaryError(f"Custom endpoint request failed: {exc}") from exc
 
 
-def build_template_summary(result: DiffResult) -> str:
+def build_template_summary(result: DiffResult, context: str = "diff") -> str:
     """A deterministic, rule-based summary that works without any API key."""
+    if context == "lint":
+        return _build_lint_template_summary(result)
+    return _build_diff_template_summary(result)
+
+
+def _build_diff_template_summary(result: DiffResult) -> str:
     counts = result.summary_counts()
 
     if result.is_empty:
@@ -196,6 +228,41 @@ def build_template_summary(result: DiffResult) -> str:
         parts.append(
             f"The remaining {counts['info']} change(s) are new features or improvements "
             "and do not pose a risk to existing integrations."
+        )
+
+    return " ".join(parts)
+
+
+def _build_lint_template_summary(result: DiffResult) -> str:
+    counts = result.summary_counts()
+
+    if result.is_empty:
+        return "No issues were found; this specification looks clean."
+
+    parts: list[str] = []
+
+    if counts["breaking"] > 0:
+        top_issues = result.breaking_changes[:5]
+        issue_desc = "; ".join(f"{c.location} ({c.message.rstrip('.')})" for c in top_issues)
+        extra = counts["breaking"] - len(top_issues)
+        extra_note = f" and {extra} more" if extra > 0 else ""
+        parts.append(
+            f"This specification has {counts['breaking']} spec-validity issue(s) that should be "
+            f"fixed first, since they can break tooling or code generation. Notably: {issue_desc}{extra_note}."
+        )
+    else:
+        parts.append("This specification has no spec-validity issues.")
+
+    if counts["warning"] > 0:
+        parts.append(
+            f"There are {counts['warning']} best-practice recommendation(s), such as missing "
+            "descriptions, operation IDs, or documented error responses, that would improve the "
+            "developer experience for anyone consuming this API."
+        )
+
+    if counts["info"] > 0:
+        parts.append(
+            f"The remaining {counts['info']} finding(s) are minor style or cleanup suggestions."
         )
 
     return " ".join(parts)

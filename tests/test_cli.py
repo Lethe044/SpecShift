@@ -82,3 +82,29 @@ def test_cli_diff_proto_works(tmp_path):
 
     exit_code = main(["diff-proto", str(old_file), str(new_file), "--format", "json", "--fail-on", "breaking"])
     assert exit_code == 1
+
+
+def test_cli_lint_flags_missing_operation_id(tmp_path, capsys):
+    spec_file = tmp_path / "spec.yaml"
+    spec_file.write_text(
+        "openapi: 3.0.0\ninfo:\n  title: T\n  version: '1.0'\n"
+        "paths:\n  /a:\n    get:\n      responses:\n        '200':\n          description: ok\n",
+        encoding="utf-8",
+    )
+    exit_code = main(["lint", str(spec_file), "--format", "json", "--fail-on", "none"])
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert exit_code == 0
+    assert any("operationId" in c["message"] for c in data["changes"])
+
+
+def test_cli_lint_clean_spec_has_no_findings(tmp_path):
+    spec_file = tmp_path / "spec.yaml"
+    spec_file.write_text(
+        "openapi: 3.0.0\ninfo:\n  title: T\n  version: '1.0'\n  description: d\n"
+        "paths:\n  /a:\n    get:\n      operationId: getA\n      summary: s\n"
+        "      responses:\n        '200':\n          description: ok\n",
+        encoding="utf-8",
+    )
+    exit_code = main(["lint", str(spec_file), "--fail-on", "breaking"])
+    assert exit_code == 0

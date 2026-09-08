@@ -89,6 +89,11 @@ requirement.
   file's history across git tags and produces a single Markdown document
   summarizing what changed (and whether it was breaking) between every
   release, plus an "Unreleased" section for the current working tree.
+- **Spec linting**: `specshift lint` reviews a single OpenAPI document for
+  spec-validity problems (undeclared path parameters, missing response
+  descriptions, undefined security schemes, duplicate operationIds) and
+  best-practice gaps (missing summaries, missing error responses,
+  inconsistent path naming, unused schemas), independent of any diff.
 - **Five output formats**: a colored console table, a Markdown report
   (ideal for PR comments), JSON (for integrating with other tools), a
   standalone filterable HTML report, and SARIF 2.1.0 for GitHub Code
@@ -271,6 +276,32 @@ Options: `--tag-pattern` (glob, default `*`, e.g. `v*` to only consider
 tags starting with `v`), `--no-working-tree` to skip the "Unreleased"
 section, and `--output` to write to a file instead of stdout.
 
+### `specshift lint <spec>`
+
+Reviews a single OpenAPI/Swagger document for spec-validity problems and
+best-practice gaps, independent of comparing it to any other version.
+Supports the same `--format`, `--output`, `--ai`, `--fail-on`, and
+`--artifact-path` options as `diff`.
+
+```bash
+specshift lint openapi.yaml
+```
+
+```
+Bookstore API : 1.0.0
+2 breaking, 3 warning, 1 info issues found.
+
+[BREAKING] GET /books/{bookId} :: Path template parameter '{bookId}' is used in the path but not declared as a path parameter for this operation.
+[BREAKING] GET /books/{bookId} > response 200 :: Response has no description. The OpenAPI spec requires every response to have one.
+[WARNING] POST /books :: Operation has no operationId; many code generators rely on this to name functions.
+...
+
+Result: 2 issue(s) should be fixed for spec validity.
+```
+
+See [When SpecShift calls something breaking](#when-specshift-calls-something-breaking)
+below for what each severity means in lint results specifically.
+
 ### `specshift init`
 
 Creates a sample `.specshift.yml` file.
@@ -412,6 +443,16 @@ than request/response direction: adding fields or rpc methods is always
 safe, changing a field's number is always breaking, and type changes are
 judged by wire type category (see the `diff-proto` section above).
 
+`specshift lint` follows a different model too, since it reviews one
+document rather than comparing two: **breaking** means the document
+violates something the OpenAPI spec itself requires (undeclared path
+parameters, a response with no description, an undefined security
+scheme), which can cause strict tooling or code generators to reject the
+document outright; **warning** means a common best-practice gap (missing
+summaries, missing operationIds, undocumented error responses,
+inconsistent naming); **info** means a minor, low-priority suggestion
+(an apparently unused schema).
+
 ## Comparison with other tools
 
 | | SpecShift | Raw JSON/YAML diff | oasdiff / openapi-diff style tools |
@@ -419,6 +460,7 @@ judged by wire type category (see the `diff-proto` section above).
 | Context-aware classification | Yes | No | Partially |
 | GraphQL support | Yes | No | Rarely |
 | Protobuf/gRPC support (wire-aware) | Yes | No | Rarely |
+| Single-document linting (not just diffing) | Yes | No | Rarely |
 | Natural-language summary | Yes (optional) | No | No |
 | Standalone HTML report | Yes | No | Rarely |
 | Local interactive dashboard | Yes | No | Rarely |
@@ -435,6 +477,7 @@ This project is under active development. Some planned areas:
 - Path parameter pattern (regex) and discriminator-level rule refinements
 - Deeper GraphQL support: directive-aware deprecation reasons, custom
   scalar compatibility hints, and federation-aware schema composition
+- Extending `specshift lint` to GraphQL and Protobuf schemas
 - Optional shared/hosted history for the `serve` dashboard (currently
   in-memory and per-session by design)
 - Changelog generation from raw commit history (not just tags), for

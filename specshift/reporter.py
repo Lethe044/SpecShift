@@ -25,34 +25,62 @@ _SEVERITY_COLORS = {
 }
 
 
+def _version_summary(result: DiffResult) -> str:
+    """Returns 'v1 -> v2' for two different versions, or just 'v1' for a single version, or ''."""
+    old_v, new_v = result.old_version, result.new_version
+    if old_v and new_v and old_v != new_v:
+        return f"{old_v} -> {new_v}"
+    return old_v or new_v or ""
+
+
 def _format_header(result: DiffResult) -> str:
-    title = result.old_title or "Specification"
-    if result.old_version or result.new_version:
-        return f"{title} : {result.old_version} -> {result.new_version}"
-    return title
+    title = result.old_title or result.new_title or "Specification"
+    version_text = _version_summary(result)
+    return f"{title} : {version_text}" if version_text else title
 
 
-def print_console_report(result: DiffResult, verbose: bool = True) -> None:
+def _noun(context: str) -> str:
+    return "issues" if context == "lint" else "changes"
+
+
+def _empty_message(context: str) -> str:
+    if context == "lint":
+        return "No issues found; this specification looks clean."
+    return "No differences found between the two specifications."
+
+
+def _result_line(counts: dict, context: str) -> str:
+    if context == "lint":
+        if counts["breaking"] > 0:
+            return f"Result: {counts['breaking']} issue(s) should be fixed for spec validity."
+        return "Result: no spec-validity issues found."
+    if counts["breaking"] > 0:
+        return f"Result: {counts['breaking']} breaking change(s) make this update risky."
+    return "Result: no breaking changes found."
+
+
+def print_console_report(result: DiffResult, verbose: bool = True, context: str = "diff") -> None:
     """Prints the result to the terminal with colors. Falls back to plain text without rich."""
     if _HAS_RICH:
-        _print_rich_report(result, verbose=verbose)
+        _print_rich_report(result, verbose=verbose, context=context)
     else:
-        print(render_plain_text_report(result, verbose=verbose))
+        print(render_plain_text_report(result, verbose=verbose, context=context))
 
 
-def _print_rich_report(result: DiffResult, verbose: bool) -> None:
+def _print_rich_report(result: DiffResult, verbose: bool, context: str = "diff") -> None:
     console = Console()
     counts = result.summary_counts()
+    noun = _noun(context)
 
     console.print(f"\n[bold]{_format_header(result)}[/bold]")
     console.print(
         f"[bold red]{counts['breaking']} breaking[/bold red], "
         f"[bold yellow]{counts['warning']} warning[/bold yellow], "
-        f"[cyan]{counts['info']} info[/cyan] changes found.\n"
+        f"[cyan]{counts['info']} info[/cyan] {noun} found.\n"
     )
 
     if result.is_empty:
-        console.print("[green]No differences found between the two specifications.[/green]")
+        console.print(f"[green]{_empty_message(context)}[/green]")
         return
 
     changes = result.sorted_changes() if verbose else result.breaking_changes + result.warnings
@@ -72,27 +100,22 @@ def _print_rich_report(result: DiffResult, verbose: bool) -> None:
 
     console.print(table)
 
-    if result.has_breaking_changes:
-        console.print(
-            f"\n[bold red]Result: {counts['breaking']} breaking change(s) make this "
-            "specification update risky for consumers.[/bold red]"
-        )
-    else:
-        console.print("\n[bold green]Result: no breaking changes found.[/bold green]")
+    result_line = _result_line(counts, context)
+    style = "bold red" if result.has_breaking_changes else "bold green"
+    console.print(f"\n[{style}]{result_line}[/{style}]")
 
 
-def render_plain_text_report(result: DiffResult, verbose: bool = True) -> str:
+def render_plain_text_report(result: DiffResult, verbose: bool = True, context: str = "diff") -> str:
     lines: list[str] = []
     counts = result.summary_counts()
+    noun = _noun(context)
 
     lines.append(_format_header(result))
-    lines.append(
-        f"{counts['breaking']} breaking, {counts['warning']} warning, {counts['info']} info changes found."
-    )
+    lines.append(f"{counts['breaking']} breaking, {counts['warning']} warning, {counts['info']} info {noun} found.")
     lines.append("")
 
     if result.is_empty:
-        lines.append("No differences found between the two specifications.")
+        lines.append(_empty_message(context))
         return "\n".join(lines)
 
     changes = result.sorted_changes() if verbose else result.breaking_changes + result.warnings
@@ -101,31 +124,26 @@ def render_plain_text_report(result: DiffResult, verbose: bool = True) -> str:
         lines.append(f"{change.severity.icon} {change.location} :: {change.message}")
 
     lines.append("")
-    if result.has_breaking_changes:
-        lines.append(
-            f"Result: {counts['breaking']} breaking change(s) make this update risky."
-        )
-    else:
-        lines.append("Result: no breaking changes found.")
-
+    lines.append(_result_line(counts, context))
     return "\n".join(lines)
 
 
-def render_markdown_report(result: DiffResult, ai_summary: str | None = None) -> str:
+def render_markdown_report(result: DiffResult, ai_summary: str | None = None, context: str = "diff") -> str:
     counts = result.summary_counts()
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     lines: list[str] = []
-    lines.append(f"# API Contract Change Report")
+    lines.append(f"# API Lint Report" if context == "lint" else "# API Contract Change Report")
     lines.append("")
     lines.append(f"**Source:** {_format_header(result)}")
     lines.append(f"**Generated at:** {timestamp}")
     lines.append("")
 
     if result.has_breaking_changes:
-        lines.append(f"## Summary: {counts['breaking']} breaking change(s) found")
+        noun = "issue(s)" if context == "lint" else "breaking change(s)"
+        lines.append(f"## Summary: {counts['breaking']} {noun} found")
     else:
-        lines.append("## Summary: no breaking changes found")
+        lines.append("## Summary: no spec-validity issues found" if context == "lint" else "## Summary: no breaking changes found")
 
     lines.append("")
     lines.append(f"| Severity | Count |")
@@ -156,7 +174,7 @@ def render_markdown_report(result: DiffResult, ai_summary: str | None = None) ->
         lines.append("")
 
     if result.is_empty:
-        lines.append("No differences were found between the two specifications.")
+        lines.append(_empty_message(context))
 
     return "\n".join(lines)
 
@@ -323,13 +341,14 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 """
 
 
-def render_html_report(result: DiffResult, ai_summary: str | None = None) -> str:
+def render_html_report(result: DiffResult, ai_summary: str | None = None, context: str = "diff") -> str:
     """Renders a standalone, self-contained HTML report with client-side filtering."""
     counts = result.summary_counts()
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
-    title = html_module.escape(result.old_title or "API Contract Change Report")
-    subtitle_text = f"{result.old_version} -> {result.new_version}" if (result.old_version or result.new_version) else ""
+    default_title = "API Lint Report" if context == "lint" else "API Contract Change Report"
+    title = html_module.escape(result.old_title or result.new_title or default_title)
+    subtitle_text = _version_summary(result)
     subtitle_line = f"{html_module.escape(subtitle_text)} &middot; " if subtitle_text else ""
 
     ai_block = ""
@@ -348,12 +367,8 @@ def render_html_report(result: DiffResult, ai_summary: str | None = None) -> str
             f"</tr>"
         )
 
-    if result.has_breaking_changes:
-        result_class = "breaking"
-        result_text = f"{counts['breaking']} breaking change(s) make this update risky for consumers."
-    else:
-        result_class = "ok"
-        result_text = "No breaking changes found."
+    result_text = html_module.escape(_result_line(counts, context).removeprefix("Result: "))
+    result_class = "breaking" if result.has_breaking_changes else "ok"
 
     return _HTML_TEMPLATE.format(
         title=title,
@@ -380,21 +395,21 @@ _SARIF_RULES = {
     Severity.BREAKING: {
         "id": "specshift-breaking-change",
         "name": "BreakingChange",
-        "shortDescription": {"text": "A contract change that can break existing consumers."},
+        "shortDescription": {"text": "A contract or spec-validity issue that can break existing consumers or tooling."},
         "helpUri": "https://github.com/Lethe044/SpecShift#when-specshift-calls-something-breaking",
         "defaultConfiguration": {"level": "error"},
     },
     Severity.WARNING: {
         "id": "specshift-warning-change",
         "name": "RiskyChange",
-        "shortDescription": {"text": "A contract change worth reviewing, but not necessarily breaking."},
+        "shortDescription": {"text": "A change or finding worth reviewing, but not necessarily breaking."},
         "helpUri": "https://github.com/Lethe044/SpecShift#when-specshift-calls-something-breaking",
         "defaultConfiguration": {"level": "warning"},
     },
     Severity.INFO: {
         "id": "specshift-info-change",
         "name": "InformationalChange",
-        "shortDescription": {"text": "A non-breaking addition or informational contract change."},
+        "shortDescription": {"text": "A non-breaking addition or minor informational finding."},
         "helpUri": "https://github.com/Lethe044/SpecShift#when-specshift-calls-something-breaking",
         "defaultConfiguration": {"level": "note"},
     },
