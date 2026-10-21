@@ -164,3 +164,15 @@ def test_single_naming_style_is_not_flagged():
     }
     result = lint_spec(spec)
     assert not any(c.category == "lint_style" for c in result.changes)
+
+
+def test_trailing_slash_duplicate_path_is_warning():
+    spec = base_clean_spec()
+    spec["paths"]["/users"] = {
+        "get": {"operationId": "listUsers", "summary": "List", "responses": {"200": {"description": "ok"}}}
+    }
+    spec["paths"]["/users/"] = {
+        "get": {"operationId": "listUsers2", "summary": "List", "responses": {"200": {"description": "ok"}}}
+    }
+    result = lint_spec(spec)
+    assert any("trailing slash" in c.message for c in result.warnings)

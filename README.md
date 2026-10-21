@@ -89,11 +89,19 @@ requirement.
   file's history across git tags and produces a single Markdown document
   summarizing what changed (and whether it was breaking) between every
   release, plus an "Unreleased" section for the current working tree.
-- **Spec linting**: `specshift lint` reviews a single OpenAPI document for
-  spec-validity problems (undeclared path parameters, missing response
-  descriptions, undefined security schemes, duplicate operationIds) and
-  best-practice gaps (missing summaries, missing error responses,
-  inconsistent path naming, unused schemas), independent of any diff.
+- **Spec linting for all three schema types**: `specshift lint` reviews a
+  single OpenAPI document for spec-validity problems (undeclared path
+  parameters, missing response descriptions, undefined security schemes,
+  duplicate operationIds) and best-practice gaps (missing summaries,
+  missing error responses, inconsistent path naming, trailing-slash
+  duplicates, unused schemas). `specshift lint-graphql` checks naming
+  conventions, a missing `Query` type, and `@deprecated` without a
+  reason. `specshift lint-proto` checks rules from the official protobuf
+  docs (proto3 enums must start at zero, field numbers 19000-19999 are
+  reserved) plus naming style.
+- **Directory-level diffing**: `specshift diff-dir` compares every spec
+  file between two directories in one run, picking the right engine per
+  file, which suits monorepos and microservice setups.
 - **Five output formats**: a colored console table, a Markdown report
   (ideal for PR comments), JSON (for integrating with other tools), a
   standalone filterable HTML report, and SARIF 2.1.0 for GitHub Code
@@ -250,6 +258,10 @@ reference (branch, tag, or commit) defined in `.specshift.yml`.
 specshift check --spec openapi.yaml --base-ref origin/main
 ```
 
+The engine is picked from the file extension, so the same command works
+for `.graphql` and `.proto` files too. Changes whose location matches a
+glob in `ignore_paths` (see the configuration section) are dropped.
+
 ### `specshift watch <url>`
 
 Periodically checks a remote specification, compares it against the
@@ -301,6 +313,39 @@ Result: 2 issue(s) should be fixed for spec validity.
 
 See [When SpecShift calls something breaking](#when-specshift-calls-something-breaking)
 below for what each severity means in lint results specifically.
+
+### `specshift lint-graphql <schema>` and `specshift lint-proto <schema>`
+
+The same idea as `lint`, for GraphQL SDL and Protobuf schemas. Both
+support the same `--format`, `--output`, `--ai`, `--fail-on`, and
+`--artifact-path` options as `diff`.
+
+```bash
+specshift lint-graphql schema.graphql
+specshift lint-proto service.proto
+```
+
+What they check:
+
+| | GraphQL | Protobuf |
+|---|---|---|
+| Breaking | no `Query` type | proto3 enum whose first value isn't zero, field number in 19000-19999 |
+| Warning | non-PascalCase types, non-camelCase fields/arguments, non-SCREAMING_SNAKE_CASE enum values, `@deprecated` without a reason | non-PascalCase messages/enums/services/rpcs, non-lower_snake_case fields, non-SCREAMING_SNAKE_CASE enum values, missing `syntax` |
+| Info | types nothing references | missing `package` |
+
+### `specshift diff-dir <old-dir> <new-dir>`
+
+Compares every specification file between two directories, matching
+files by relative path and choosing the engine from the extension
+(OpenAPI for `.yaml`/`.yml`/`.json`, GraphQL for `.graphql`/`.gql`,
+Protobuf for `.proto`). A file that exists only in the old directory is
+reported as breaking, a file that exists only in the new one as info, and
+changes inside a modified file are prefixed with the file name.
+
+```bash
+specshift diff-dir ./contracts-v1 ./contracts-v2
+specshift diff-dir ./old ./new --pattern "*.proto" --pattern "*.graphql"
+```
 
 ### `specshift init`
 
@@ -416,8 +461,16 @@ ai_provider: groq
 ai_model: llama-3.3-70b-versatile
 slack_webhook: https://hooks.slack.com/services/...
 discord_webhook: https://discord.com/api/webhooks/...
-ignore_paths: []
+
+# glob patterns matched against each change's location; matching
+# changes are dropped from `specshift check` results
+ignore_paths:
+  - "* /internal/*"
+  - "Role.*"
 ```
+
+`spec_path` can point at an OpenAPI, GraphQL (`.graphql`/`.gql`), or
+Protobuf (`.proto`) file.
 
 ## When SpecShift calls something breaking
 
@@ -460,7 +513,8 @@ inconsistent naming); **info** means a minor, low-priority suggestion
 | Context-aware classification | Yes | No | Partially |
 | GraphQL support | Yes | No | Rarely |
 | Protobuf/gRPC support (wire-aware) | Yes | No | Rarely |
-| Single-document linting (not just diffing) | Yes | No | Rarely |
+| Single-document linting (OpenAPI, GraphQL, Protobuf) | Yes | No | Rarely |
+| Whole-directory comparison | Yes | No | Rarely |
 | Natural-language summary | Yes (optional) | No | No |
 | Standalone HTML report | Yes | No | Rarely |
 | Local interactive dashboard | Yes | No | Rarely |
@@ -477,7 +531,8 @@ This project is under active development. Some planned areas:
 - Path parameter pattern (regex) and discriminator-level rule refinements
 - Deeper GraphQL support: directive-aware deprecation reasons, custom
   scalar compatibility hints, and federation-aware schema composition
-- Extending `specshift lint` to GraphQL and Protobuf schemas
+- Description checks for GraphQL (triple-quoted docstrings), which needs
+  the SDL parser to track descriptions
 - Optional shared/hosted history for the `serve` dashboard (currently
   in-memory and per-session by design)
 - Changelog generation from raw commit history (not just tags), for

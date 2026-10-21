@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from specshift.differ import diff_specs
+from specshift.engine_detect import detect_engine
 from specshift.git_utils import (
     GitError,
     current_branch,
@@ -28,21 +29,12 @@ from specshift.models import DiffResult
 from specshift.protobuf_differ import diff_protos
 from specshift.spec_loader import SpecLoadError, parse_spec_text
 
-_GRAPHQL_EXTENSIONS = {".graphql", ".gql"}
-_PROTO_EXTENSIONS = {".proto"}
-
-
 class ChangelogError(Exception):
     """Raised when a changelog cannot be generated."""
 
 
 def _detect_engine(spec_path: str) -> str:
-    suffix = Path(spec_path).suffix.lower()
-    if suffix in _GRAPHQL_EXTENSIONS:
-        return "graphql"
-    if suffix in _PROTO_EXTENSIONS:
-        return "proto"
-    return "openapi"
+    return detect_engine(spec_path)
 
 
 def _diff_by_engine(engine: str, old_text: str, new_text: str) -> DiffResult:

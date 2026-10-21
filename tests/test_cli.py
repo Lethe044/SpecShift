@@ -108,3 +108,35 @@ def test_cli_lint_clean_spec_has_no_findings(tmp_path):
     )
     exit_code = main(["lint", str(spec_file), "--fail-on", "breaking"])
     assert exit_code == 0
+
+
+def test_cli_lint_graphql_flags_missing_query(tmp_path):
+    schema = tmp_path / "schema.graphql"
+    schema.write_text("type User { id: ID! }", encoding="utf-8")
+    assert main(["lint-graphql", str(schema), "--format", "json", "--fail-on", "breaking"]) == 1
+
+
+def test_cli_lint_proto_flags_bad_enum(tmp_path):
+    proto = tmp_path / "svc.proto"
+    proto.write_text('syntax = "proto3"; enum Role { ADMIN = 1; }', encoding="utf-8")
+    assert main(["lint-proto", str(proto), "--format", "json", "--fail-on", "breaking"]) == 1
+
+
+def test_cli_diff_dir_detects_removed_file(tmp_path):
+    old_dir = tmp_path / "old"
+    new_dir = tmp_path / "new"
+    old_dir.mkdir()
+    new_dir.mkdir()
+    (old_dir / "api.yaml").write_text("openapi: 3.0.0\ninfo:\n  title: T\n  version: '1'\npaths: {}\n", encoding="utf-8")
+    assert main(["diff-dir", str(old_dir), str(new_dir), "--format", "json", "--fail-on", "breaking"]) == 1
+
+
+def test_apply_ignore_patterns_filters_matching_locations():
+    from specshift.cli import _apply_ignore_patterns
+    from specshift.models import Change, ChangeType, DiffResult, Severity
+
+    result = DiffResult()
+    result.add(Change(Severity.BREAKING, ChangeType.REMOVED, "GET /internal/health", "x"))
+    result.add(Change(Severity.BREAKING, ChangeType.REMOVED, "GET /books", "y"))
+    _apply_ignore_patterns(result, ["* /internal/*"])
+    assert [c.location for c in result.changes] == ["GET /books"]

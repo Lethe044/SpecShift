@@ -87,8 +87,8 @@ def _build_prompt(result: DiffResult, context: str = "diff") -> str:
 
     if context == "lint":
         intro = (
-            "Below is a list of issues found while linting a single OpenAPI "
-            "specification for correctness and best practices. This is NOT a "
+            "Below is a list of issues found while linting a single API "
+            "schema or specification for correctness and best practices. This is NOT a "
             "comparison between two versions, it is a quality review of one "
             "document. Read this list and write a short, clear, professional "
             "summary in English that a developer maintaining this API would "

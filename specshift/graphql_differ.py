@@ -185,18 +185,26 @@ def parse_sdl(text: str) -> dict:
                 value_name = enum_match.group("name")
                 if not value_name:
                     continue
-                deprecated = "@deprecated" in (enum_match.group("directives") or "")
-                type_def["enum_values"][value_name] = {"deprecated": deprecated}
+                directives_text = enum_match.group("directives") or ""
+                deprecated = "@deprecated" in directives_text
+                deprecated_has_reason = bool(re.search(r"@deprecated\s*\(\s*reason\s*:", directives_text))
+                type_def["enum_values"][value_name] = {
+                    "deprecated": deprecated,
+                    "deprecated_has_reason": deprecated_has_reason,
+                }
         elif kind in ("type", "input", "interface"):
             for field_match in _FIELD_LINE_RE.finditer(body):
                 type_ref = _parse_type_ref(field_match.group("type"))
-                deprecated = "@deprecated" in (field_match.group("directives") or "")
+                directives_text = field_match.group("directives") or ""
+                deprecated = "@deprecated" in directives_text
+                deprecated_has_reason = bool(re.search(r"@deprecated\s*\(\s*reason\s*:", directives_text))
                 type_def["fields"][field_match.group("name")] = {
                     **type_ref,
                     "args": _parse_args(field_match.group("args")),
                     "has_default": field_match.group("default") is not None,
                     "default": field_match.group("default").strip() if field_match.group("default") else None,
                     "deprecated": deprecated,
+                    "deprecated_has_reason": deprecated_has_reason,
                 }
 
         types[name] = type_def

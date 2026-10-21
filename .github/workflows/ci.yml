@@ -35,6 +35,16 @@ jobs:
           specshift diff-graphql examples/old_schema.graphql examples/new_schema.graphql --format json --fail-on none
           specshift diff-proto examples/old_service.proto examples/new_service.proto --format json --fail-on none
           specshift lint examples/old_api.yaml --format json --fail-on none
+          specshift lint-graphql examples/old_schema.graphql --format json --fail-on none
+          specshift lint-proto examples/old_service.proto --format json --fail-on none
+          mkdir -p /tmp/dir-old /tmp/dir-new
+          cp examples/old_api.yaml /tmp/dir-old/api.yaml
+          cp examples/old_schema.graphql /tmp/dir-old/schema.graphql
+          cp examples/old_service.proto /tmp/dir-old/service.proto
+          cp examples/new_api.yaml /tmp/dir-new/api.yaml
+          cp examples/new_schema.graphql /tmp/dir-new/schema.graphql
+          cp examples/new_service.proto /tmp/dir-new/service.proto
+          specshift diff-dir /tmp/dir-old /tmp/dir-new --format json --fail-on none
           specshift diff examples/old_api.yaml examples/new_api.yaml --format html --output /tmp/report.html --fail-on none
           specshift diff examples/old_api.yaml examples/new_api.yaml --format sarif --output /tmp/report.sarif --fail-on none
 

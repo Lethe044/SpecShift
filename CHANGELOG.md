@@ -2,6 +2,42 @@
 
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-09-10
+
+### Added
+- `specshift lint-graphql <schema>`: lints a single GraphQL SDL schema.
+  Flags a missing `Query` root type (breaking), type names that aren't
+  PascalCase, field and argument names that aren't camelCase, enum values
+  that aren't SCREAMING_SNAKE_CASE, `@deprecated` used without a `reason`
+  (all warnings), and types that nothing references (info).
+- `specshift lint-proto <schema>`: lints a single Protobuf/gRPC `.proto`
+  schema using rules checked against the official protobuf documentation:
+  the first value of a proto3 enum must be zero and field numbers
+  19000-19999 are reserved for the implementation (both breaking), plus
+  naming style checks (PascalCase messages, enums, services and rpcs;
+  lower_snake_case fields; SCREAMING_SNAKE_CASE enum values), a missing
+  `syntax` declaration (warning), and a missing `package` declaration
+  (info).
+- `specshift diff-dir <old-dir> <new-dir>`: compares every specification
+  file between two directories, matching files by relative path and
+  picking the right engine per file (OpenAPI, GraphQL, or Protobuf).
+  A file that disappears is reported as breaking, a new file as info,
+  and every change inside a modified file is reported with the file
+  name as a prefix. Use `--pattern` (repeatable) to choose which file
+  names to include.
+- `specshift check` now picks the engine from the file extension, so the
+  same CI command works for OpenAPI, GraphQL, and `.proto` files.
+- The `ignore_paths` option in `.specshift.yml` now actually takes
+  effect: any change whose location matches one of the glob patterns is
+  dropped from `specshift check` results. It was documented in the
+  generated config but not applied before.
+- OpenAPI lint now warns when two paths differ only by a trailing slash
+  (for example `/users` and `/users/`).
+
+### Changed
+- The AI summary prompt for lint results no longer assumes the schema is
+  an OpenAPI document, since lint now covers three schema types.
+
 ## [1.4.0] - 2026-09-08
 
 ### Added

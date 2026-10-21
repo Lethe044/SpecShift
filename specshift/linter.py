@@ -246,6 +246,21 @@ def _lint_paths(spec: dict, result: DiffResult) -> None:
                 )
             )
 
+    for path in paths:
+        if len(path) > 1 and path.endswith("/") and path.rstrip("/") in paths:
+            result.add(
+                Change(
+                    severity=Severity.WARNING,
+                    change_type=ChangeType.MODIFIED,
+                    location=path,
+                    message=(
+                        f"Paths '{path}' and '{path.rstrip('/')}' differ only by a trailing slash. "
+                        "Many routers treat these as different routes, which can cause confusing 404s."
+                    ),
+                    category="lint_style",
+                )
+            )
+
     if len(path_segment_styles) > 1:
         dominant_style, _ = path_segment_styles.most_common(1)[0]
         all_styles = ", ".join(sorted(path_segment_styles))

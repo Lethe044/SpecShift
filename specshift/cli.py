@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import sys
@@ -15,12 +16,16 @@ from specshift.ai_summary import generate_summary
 from specshift.changelog import ChangelogError, build_changelog, relevant_tags
 from specshift.config import SpecShiftConfig, write_default_config
 from specshift.differ import diff_specs
-from specshift.git_utils import GitError, load_spec_from_git
+from specshift.engine_detect import detect_engine
+from specshift.git_utils import GitError, load_spec_from_git, read_file_at_ref
 from specshift.graphql_differ import GraphQLLoadError, diff_graphql, load_sdl
+from specshift.graphql_linter import lint_graphql
 from specshift.linter import lint_spec
 from specshift.models import DiffResult
+from specshift.multi_diff import DEFAULT_PATTERNS, diff_directories
 from specshift.notifier import NotifyError, notify_discord, notify_slack
 from specshift.protobuf_differ import ProtoLoadError, diff_protos, load_proto
+from specshift.protobuf_linter import lint_proto
 from specshift.reporter import (
     print_console_report,
     render_html_report,
@@ -37,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="specshift",
         description="Detects and classifies changes in OpenAPI/Swagger, GraphQL, and Protobuf/gRPC contracts, "
-        "and lints a single OpenAPI specification for best practices.",
+        "and lints single OpenAPI, GraphQL, or Protobuf schemas for validity and best practices.",
     )
     parser.add_argument("--version", action="version", version=f"specshift {__version__}")
 
@@ -63,6 +68,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     lint_parser.add_argument("spec", help="Specification to lint: file path or URL")
     _add_common_diff_args(lint_parser)
+
+    lint_graphql_parser = subparsers.add_parser(
+        "lint-graphql", help="Checks a single GraphQL SDL schema for naming conventions and structural issues"
+    )
+    lint_graphql_parser.add_argument("spec", help="GraphQL schema to lint: file path or URL")
+    _add_common_diff_args(lint_graphql_parser)
+
+    lint_proto_parser = subparsers.add_parser(
+        "lint-proto", help="Checks a single Protobuf/gRPC .proto schema for naming conventions and validity issues"
+    )
+    lint_proto_parser.add_argument("spec", help=".proto schema to lint: file path or URL")
+    _add_common_diff_args(lint_proto_parser)
+
+    diff_dir_parser = subparsers.add_parser(
+        "diff-dir", help="Compares every matching specification file between two directories"
+    )
+    diff_dir_parser.add_argument("old", help="Old directory")
+    diff_dir_parser.add_argument("new", help="New directory")
+    diff_dir_parser.add_argument(
+        "--pattern",
+        action="append",
+        default=None,
+        help="Glob pattern of filenames to include (repeatable). Default: yaml/yml/json/graphql/gql/proto",
+    )
+    _add_common_diff_args(diff_dir_parser)
 
     check_parser = subparsers.add_parser(
         "check", help="For CI: compares the current specification against a git reference"
@@ -148,6 +178,12 @@ def main(argv: Optional[list[str]] = None) -> int:
             return _run_diff_proto(args)
         if args.command == "lint":
             return _run_lint(args)
+        if args.command == "lint-graphql":
+            return _run_lint_graphql(args)
+        if args.command == "lint-proto":
+            return _run_lint_proto(args)
+        if args.command == "diff-dir":
+            return _run_diff_dir(args)
         if args.command == "check":
             return _run_check(args)
         if args.command == "watch":
@@ -199,16 +235,46 @@ def _run_lint(args: argparse.Namespace) -> int:
     return _emit_result(result, args, context="lint")
 
 
+def _run_lint_graphql(args: argparse.Namespace) -> int:
+    result = lint_graphql(load_sdl(args.spec))
+    return _emit_result(result, args, context="lint")
+
+
+def _run_lint_proto(args: argparse.Namespace) -> int:
+    result = lint_proto(load_proto(args.spec))
+    return _emit_result(result, args, context="lint")
+
+
+def _run_diff_dir(args: argparse.Namespace) -> int:
+    patterns = tuple(args.pattern) if args.pattern else DEFAULT_PATTERNS
+    result = diff_directories(args.old, args.new, patterns=patterns)
+    return _emit_result(result, args)
+
+
+def _apply_ignore_patterns(result: DiffResult, patterns: list) -> None:
+    """Drops changes whose location matches any of the configured glob patterns."""
+    if not patterns:
+        return
+    result.changes[:] = [
+        change for change in result.changes if not any(fnmatch.fnmatch(change.location, p) for p in patterns)
+    ]
+
+
 def _run_check(args: argparse.Namespace) -> int:
     config = SpecShiftConfig.load(args.config)
     spec_path = args.spec or config.spec_path
     base_ref = args.base_ref or config.base_ref
     args.spec = spec_path  # resolved path, used as the SARIF artifact location if --artifact-path isn't set
 
-    old_spec = load_spec_from_git(spec_path, base_ref)
-    new_spec = load_spec(spec_path)
+    engine = detect_engine(spec_path)
+    if engine == "graphql":
+        result = diff_graphql(read_file_at_ref(spec_path, base_ref), load_sdl(spec_path))
+    elif engine == "proto":
+        result = diff_protos(read_file_at_ref(spec_path, base_ref), load_proto(spec_path))
+    else:
+        result = diff_specs(load_spec_from_git(spec_path, base_ref), load_spec(spec_path))
 
-    result = diff_specs(old_spec, new_spec)
+    _apply_ignore_patterns(result, config.ignore_paths)
 
     if not args.ai_provider and config.ai_provider:
         args.ai_provider = config.ai_provider
